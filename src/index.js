@@ -1,0 +1,138 @@
+require("dotenv").config();
+const express = require("express");
+const crypto = require("crypto");
+const lightspeedAuth = require("./routes/lightspeedAuth");
+const {
+  hasValidToken,
+  getItemBySystemSku,
+  createSale
+} = require("./services/lightspeed");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const processedOrders = new Set();
+
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf; // Required for Shopify HMAC verification
+  }
+}));
+
+app.get("/", (_, res) => res.send("Server running"));
+
+app.post("/webhooks/orders-create", async (req, res) => {
+  // 1. Get shop domain from Shopify header
+  const shopDomain = req.get("X-Shopify-Shop-Domain");
+
+  if (!shopDomain) {
+    console.warn("⚠️ Missing X-Shopify-Shop-Domain header");
+    return res.status(400).send("Missing shop domain");
+  }
+
+  console.log(`Webhook received from Shopify store: ${shopDomain}`);
+
+  // 2. Find the corresponding webhook secret and Lightspeed customer ID
+  let webhookSecret;
+  let lsCustomerID;
+
+  // Loop through .env keys to find matching domain
+  for (const key in process.env) {
+    if (key.endsWith("_DOMAIN") && process.env[key] === shopDomain) {
+      const prefix = key.replace("_DOMAIN", "");
+      webhookSecret = process.env[`${prefix}_WEBHOOK_SECRET`];
+      lsCustomerID = process.env[`${prefix}_LS_CUSTOMER`];
+      break;
+    }
+  }
+
+  if (!webhookSecret || !lsCustomerID) {
+    console.warn(`⚠️ No mapping found for domain: ${shopDomain}`);
+    return res.status(401).send("Unauthorized - unknown store");
+  }
+
+  // 3. Verify HMAC using the correct per-store secret
+  const hmac = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(req.rawBody)
+    .digest("base64");
+
+  if (hmac !== req.get("X-Shopify-Hmac-Sha256")) {
+    console.warn(`⚠️ Invalid HMAC for ${shopDomain}`);
+    return res.status(401).send("Unauthorized");
+  }
+
+  console.log(`Webhook verified successfully for ${shopDomain}`);
+
+  // 4. Check Lightspeed token
+  if (!hasValidToken()) {
+    console.log("⏳ Lightspeed token not ready yet. Skipping order.");
+    return res.status(200).send("OK");
+  }
+
+  const order = req.body;
+
+  // 5. Prevent duplicate processing
+  if (processedOrders.has(order.id)) {
+    console.log("🔁 Duplicate webhook ignored:", order.id);
+    return res.status(200).send("OK");
+  }
+  processedOrders.add(order.id);
+
+  try {
+    console.log(`📦 Processing Shopify order #${order.id} from ${shopDomain} - Total: $${order.total_price}`);
+
+    const saleLines = [];
+
+    for (const item of order.line_items || []) {
+      const shopifySku = item.sku?.trim();
+
+      if (!shopifySku) {
+        console.warn(`⚠️ Skipping item without SKU: "${item.title}" (variant ID: ${item.variant_id})`);
+        continue;
+      }
+
+      console.log(`🛒 Looking up item: "${item.title}" - SKU: ${shopifySku}`);
+
+      try {
+        const lsItem = await getItemBySystemSku(shopifySku);
+        saleLines.push({
+          itemID: Number(lsItem.itemID),
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.price)
+        });
+        console.log(`   → Added: itemID ${lsItem.itemID} × ${item.quantity} @ $${item.price}`);
+      } catch (lookupErr) {
+        console.warn(`   → Failed to find item in Lightspeed: ${lookupErr.message}`);
+        // Continue — don't fail entire order
+      }
+    }
+
+    if (saleLines.length === 0) {
+      console.warn(`⚠️ No valid items could be synced for order #${order.id}`);
+      return res.status(200).send("OK - No syncable items");
+    }
+
+    console.log(`📊 Creating sale for Lightspeed customer ${lsCustomerID} with ${saleLines.length} line(s)`);
+
+    await createSale({
+      saleLines,
+      customerID: Number(lsCustomerID)  // ← Use the store-specific customer
+    });
+
+    console.log(`🎉 Sale created successfully for Shopify order #${order.id} from ${shopDomain}`);
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error(`❌ Order sync failed for Shopify order #${order?.id || "unknown"} from ${shopDomain}`);
+    console.error("Message:", err.message);
+    console.error("Response data:", err.response?.data || "No API response");
+    console.error("Full error:", err);
+    console.error("Stack:", err.stack);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+app.use("/lightspeed", lightspeedAuth);
+
+app.listen(PORT, () =>
+  console.log(`🚀 Server running on http://localhost:${PORT}`)
+);
