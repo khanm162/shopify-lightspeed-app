@@ -1,17 +1,18 @@
 const express = require("express");
 const router = express.Router();
-
 const {
   exchangeCodeForToken
 } = require("../services/lightspeed");
 
 router.get("/auth", (req, res) => {
+  const redirectUri = process.env.LIGHTSPEED_REDIRECT_URI || "https://shopify-api-sync.vercel.app/lightspeed/callback";
+
   const url =
     `https://cloud.lightspeedapp.com/auth/oauth/authorize` +
     `?response_type=code` +
     `&client_id=${process.env.LIGHTSPEED_CLIENT_ID}` +
-    `&redirect_uri=${encodeURIComponent(process.env.LIGHTSPEED_REDIRECT_URI)}` +
-    `&scope=employee:register employee:all`;
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=employee:register employee:all employee:sales employee:pos employee:admin`;
 
   console.log("DEBUG auth URL:", url);
   res.redirect(url);
@@ -20,13 +21,13 @@ router.get("/auth", (req, res) => {
 router.get("/callback", async (req, res) => {
   try {
     const { code } = req.query;
-    if (!code) return res.status(400).send("Missing code");
+    if (!code) return res.status(400).send("Missing code parameter");
 
     await exchangeCodeForToken(code);
-    res.send("Lightspeed connected successfully");
+    res.send("Lightspeed connected successfully! You can close this tab/window.");
   } catch (err) {
-    console.error("OAuth failed:", err.message);
-    res.status(500).send("OAuth failed");
+    console.error("OAuth callback failed:", err.message);
+    res.status(500).send("OAuth failed - check server logs");
   }
 });
 
