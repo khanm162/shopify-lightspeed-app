@@ -5,7 +5,8 @@ const lightspeedAuth = require("./routes/lightspeedAuth");
 const {
   hasValidToken,
   getItemBySystemSku,
-  createSale
+  createSale,
+  refreshAccessToken  // Add this import if not already
 } = require("./services/lightspeed");
 
 const app = express();
@@ -34,27 +35,39 @@ app.get("/dashboard/failed", (req, res) => {
 app.post("/resync/:orderId", async (req, res) => {
   const orderId = req.params.orderId;
   const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
-
   if (!failed) {
     return res.status(404).json({ error: "Order not found in failed list" });
   }
-
   try {
     console.log(`Manual re-sync requested for order #${orderId} from ${failed.shopDomain}`);
-
     // Re-run the sync (you can expand this with full order data if needed)
     const saleLines = failed.saleLines || []; // If you saved them earlier
     await createSale({
       saleLines,
       customerID: Number(failed.lsCustomerID)
     });
-
     // Remove from failed list on success
     failedOrders.splice(failedOrders.indexOf(failed), 1);
     res.json({ success: true, message: `Re-sync successful for order #${orderId}` });
   } catch (err) {
     console.error(`Re-sync failed for #${orderId}:`, err.message);
     res.status(500).json({ error: "Re-sync failed", details: err.message });
+  }
+});
+
+// Token refresh endpoint for cron (safe to call anytime)
+app.get("/refresh-token", async (req, res) => {
+  try {
+    if (!hasValidToken()) {
+      await refreshAccessToken();
+      console.log("Token refreshed via cron");
+      res.send("Token refreshed successfully");
+    } else {
+      res.send("Token still valid");
+    }
+  } catch (err) {
+    console.error("Cron refresh failed:", err.message);
+    res.status(500).send("Refresh failed");
   }
 });
 
@@ -74,10 +87,10 @@ app.post("/webhooks/orders-create", async (req, res) => {
     return res.status(400).send("Missing shop domain");
   }
   console.log(`Webhook received from Shopify store: ${shopDomain}`);
-
   // 2. Find the corresponding webhook secret and Lightspeed customer ID
   let webhookSecret;
   let lsCustomerID;
+  // Loop through .env keys to find matching domain
   for (const key in process.env) {
     if (key.endsWith("_DOMAIN") && process.env[key] === shopDomain) {
       const prefix = key.replace("_DOMAIN", "");
@@ -86,43 +99,34 @@ app.post("/webhooks/orders-create", async (req, res) => {
       break;
     }
   }
-
   if (!webhookSecret || !lsCustomerID) {
     console.warn(`⚠️ No mapping found for domain: ${shopDomain}`);
     return res.status(401).send("Unauthorized - unknown store");
   }
-
   // 3. Verify HMAC using the correct per-store secret
   const hmac = crypto
     .createHmac("sha256", webhookSecret)
     .update(req.rawBody)
     .digest("base64");
-
   if (hmac !== req.get("X-Shopify-Hmac-Sha256")) {
     console.warn(`⚠️ Invalid HMAC for ${shopDomain}`);
     return res.status(401).send("Unauthorized");
   }
-
   console.log(`Webhook verified successfully for ${shopDomain}`);
-
   // 4. Check Lightspeed token
   if (!hasValidToken()) {
     console.log("⏳ Lightspeed token not ready yet. Skipping order.");
     return res.status(200).send("OK");
   }
-
   const order = req.body;
-
   // 5. Prevent duplicate processing
   if (processedOrders.has(order.id)) {
     console.log("🔁 Duplicate webhook ignored:", order.id);
     return res.status(200).send("OK");
   }
   processedOrders.add(order.id);
-
   try {
     console.log(`📦 Processing Shopify order #${order.id} from ${shopDomain} - Total: $${order.total_price}`);
-
     const saleLines = [];
     for (const item of order.line_items || []) {
       const shopifySku = item.sku?.trim();
@@ -144,19 +148,15 @@ app.post("/webhooks/orders-create", async (req, res) => {
         // Continue — don't fail entire order
       }
     }
-
     if (saleLines.length === 0) {
       console.warn(`⚠️ No valid items could be synced for order #${order.id}`);
       return res.status(200).send("OK - No syncable items");
     }
-
     console.log(`📊 Creating sale for Lightspeed customer ${lsCustomerID} with ${saleLines.length} line(s)`);
-
     await createSale({
       saleLines,
-      customerID: Number(lsCustomerID)
+      customerID: Number(lsCustomerID) // ← Use the store-specific customer
     });
-
     console.log(`🎉 Sale created successfully for Shopify order #${order.id} from ${shopDomain}`);
     res.status(200).send("OK");
   } catch (err) {
@@ -171,18 +171,13 @@ app.post("/webhooks/orders-create", async (req, res) => {
       // Optional: save minimal order data for retry (don't save full order if sensitive)
       lineItemsCount: order.line_items?.length || 0
     };
-
     failedOrders.push(errorInfo);
-
     console.error(`❌ Order sync failed for Shopify order #${order?.id || "unknown"} from ${shopDomain}`);
     console.error("Failure details:", JSON.stringify(errorInfo, null, 2));
-
     res.status(500).send("Internal Server Error");
   }
 });
-
 app.use("/lightspeed", lightspeedAuth);
-
 app.listen(PORT, () =>
   console.log(`🚀 Server running on http://localhost:${PORT}`)
 );
