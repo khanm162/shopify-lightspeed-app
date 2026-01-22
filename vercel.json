@@ -15,7 +15,7 @@
   "crons": [
     {
       "path": "/refresh-token",
-      "schedule": "*/20 * * * *"
+      "schedule": "*/30 * * * *"
     }
   ]
 }
