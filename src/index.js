@@ -243,7 +243,7 @@ app.post("/webhooks/orders-create", async (req, res) => {
       errorDetails: err.response?.data || err.stack || err.toString()
     });
 
-    console.error(`❌ Order sync failed for Shopify order #${order?.id || "unknown"} from ${shopDomain}`);
+    console.error(`❌ Order sync fail for Shopify order #${order?.id || "unknown"} from ${shopDomain}`);
     console.error("Failure details:", JSON.stringify(errorInfo, null, 2));
 
     res.status(500).send("Internal Server Error");
