@@ -11,11 +11,5 @@
       "src": "/.*",
       "dest": "src/index.js"
     }
-  ],
-  "crons": [
-    {
-      "path": "/refresh-token",
-      "schedule": "*/30 * * * *"
-    }
   ]
 }
