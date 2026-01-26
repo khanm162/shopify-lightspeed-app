@@ -15,9 +15,9 @@ const processedOrders = new Set();
 // In-memory storage for ALL orders (success + failed) — resets on restart
 const orderLogs = [];
 
-// Set EJS as view engine
+// Set EJS as view engine — point to ROOT views folder (../views from src/)
 app.set('view engine', 'ejs');
-app.set('views', __dirname + '/views');
+app.set('views', __dirname + '/../views');  // ← FIXED HERE
 
 // Dashboard: HTML table view of all orders
 app.get("/dashboard", (req, res) => {
@@ -36,7 +36,7 @@ app.get("/dashboard", (req, res) => {
   });
 });
 
-// JSON API for all orders (for future use)
+// JSON API for all orders (for future use or API calls)
 app.get("/dashboard/orders", (req, res) => {
   res.json({
     totalOrders: orderLogs.length,
@@ -69,7 +69,7 @@ app.get("/dashboard/failed", (req, res) => {
   });
 });
 
-// Re-sync endpoint
+// Re-sync endpoint (POST to retry a failed order)
 app.post("/resync/:orderId", async (req, res) => {
   const orderId = req.params.orderId;
   const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
