@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Order Sync Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #eee; }
+    .failed { color: red; }
+    .success { color: green; }
+    button { padding: 5px 10px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+    button:hover { background: #45a049; }
+  </style>
+</head>
+<body>
+  <h1>Order Sync Dashboard</h1>
+  <p>Total Orders: <%= totalOrders %></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Shopify Order ID</th>
+        <th>Store Domain</th>
+        <th>LS Customer ID</th>
+        <th>Timestamp</th>
+        <th>Status</th>
+        <th>Products (SKU x Quantity)</th>
+        <th>LS Sale ID</th>
+        <th>Error Message</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% orders.forEach(o => { %>
+        <tr>
+          <td><%= o.shopifyOrderId %></td>
+          <td><%= o.shopDomain %></td>
+          <td><%= o.lsCustomerID %></td>
+          <td><%= o.timestamp %></td>
+          <td class="<%= o.status === 'success' ? 'success' : 'failed' %>"><%= o.status %></td>
+          <td>
+            <% o.products.forEach(p => { %>
+              <%= p.sku %> x <%= p.quantity %><br>
+            <% }); %>
+          </td>
+          <td><%= o.lsSaleID || '-' %></td>
+          <td><%= o.errorMessage || '-' %></td>
+          <td>
+            <% if (o.status === 'failed') { %>
+              <button onclick="resync('<%= o.shopifyOrderId %>')">Re-sync</button>
+            <% } %>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+
+  <script>
+    async function resync(orderId) {
+      try {
+        const res = await fetch(`/resync/${orderId}`, { method: 'POST' });
+        if (res.ok) {
+          alert('Re-sync successful!');
+          location.reload(); // Reload dashboard
+        } else {
+          alert('Re-sync failed: ' + await res.text());
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+  </script>
+</body>
+</html>
