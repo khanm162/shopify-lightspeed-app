@@ -5,7 +5,8 @@ const lightspeedAuth = require("./routes/lightspeedAuth");
 const {
   hasValidToken,
   getItemBySystemSku,
-  createSale
+  createSale,
+  refreshAccessToken   // ← FIXED: added this
 } = require("./services/lightspeed");
 
 const app = express();
@@ -17,7 +18,7 @@ const orderLogs = [];
 
 // Set EJS as view engine — point to ROOT views folder (../views from src/)
 app.set('view engine', 'ejs');
-app.set('views', __dirname + '/../views');  // ← FIXED HERE
+app.set('views', __dirname + '/../views');
 
 // Dashboard: HTML table view of all orders
 app.get("/dashboard", (req, res) => {
@@ -35,6 +36,8 @@ app.get("/dashboard", (req, res) => {
     }))
   });
 });
+
+// ... (rest of your code remains unchanged: /dashboard/orders, /dashboard/failed, /resync/:orderId, /refresh-token, /, /webhooks/orders-create, app.use, app.listen)
 
 // JSON API for all orders (for future use or API calls)
 app.get("/dashboard/orders", (req, res) => {
