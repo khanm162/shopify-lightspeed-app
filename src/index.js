@@ -15,7 +15,28 @@ const processedOrders = new Set();
 // In-memory storage for ALL orders (success + failed) — resets on restart
 const orderLogs = [];
 
-// Dashboard: View ALL orders (success + failed)
+// Set EJS as view engine
+app.set('view engine', 'ejs');
+app.set('views', __dirname + '/views');
+
+// Dashboard: HTML table view of all orders
+app.get("/dashboard", (req, res) => {
+  res.render('orders', { 
+    totalOrders: orderLogs.length, 
+    orders: orderLogs.map(o => ({
+      shopifyOrderId: o.shopifyOrderId,
+      shopDomain: o.shopDomain,
+      lsCustomerID: o.lsCustomerID,
+      timestamp: o.timestamp,
+      status: o.status,
+      products: o.products,
+      lsSaleID: o.lsSaleID,
+      errorMessage: o.errorMessage
+    }))
+  });
+});
+
+// JSON API for all orders (for future use)
 app.get("/dashboard/orders", (req, res) => {
   res.json({
     totalOrders: orderLogs.length,
@@ -25,7 +46,7 @@ app.get("/dashboard/orders", (req, res) => {
       lsCustomerID: o.lsCustomerID,
       timestamp: o.timestamp,
       status: o.status,
-      products: o.products, // array of { sku, quantity }
+      products: o.products,
       lsSaleID: o.lsSaleID || null,
       errorMessage: o.errorMessage || null,
       errorDetails: o.errorDetails || null
@@ -33,10 +54,7 @@ app.get("/dashboard/orders", (req, res) => {
   });
 });
 
-// In-memory storage for failed orders (subset of orderLogs)
-const failedOrders = [];
-
-// Dashboard: View only failed orders (kept for compatibility)
+// Failed orders dashboard (JSON)
 app.get("/dashboard/failed", (req, res) => {
   res.json({
     failedCount: failedOrders.length,
@@ -51,32 +69,22 @@ app.get("/dashboard/failed", (req, res) => {
   });
 });
 
-// Re-sync endpoint (POST to retry a failed order)
+// Re-sync endpoint
 app.post("/resync/:orderId", async (req, res) => {
   const orderId = req.params.orderId;
   const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
-
-  if (!failed) {
-    return res.status(404).json({ error: "Order not found in failed list" });
-  }
+  if (!failed) return res.status(404).json({ error: "Order not found in failed list" });
 
   try {
     console.log(`Manual re-sync requested for order #${orderId} from ${failed.shopDomain}`);
-
-    // Re-run the sync (expand if you saved full saleLines earlier)
-    const saleLines = failed.saleLines || []; // If you saved them earlier
+    const saleLines = failed.saleLines || [];
     await createSale({
       saleLines,
       customerID: Number(failed.lsCustomerID)
     });
-
-    // Remove from failed list on success
     failedOrders.splice(failedOrders.indexOf(failed), 1);
-
-    // Update status in orderLogs (optional - optional)
     const logEntry = orderLogs.find(o => o.shopifyOrderId === orderId);
     if (logEntry) logEntry.status = "success";
-
     res.json({ success: true, message: `Re-sync successful for order #${orderId}` });
   } catch (err) {
     console.error(`Re-sync failed for #${orderId}:`, err.message);
@@ -102,22 +110,17 @@ app.get("/refresh-token", async (req, res) => {
 
 app.use(express.json({
   verify: (req, res, buf) => {
-    req.rawBody = buf; // Required for Shopify HMAC verification
+    req.rawBody = buf;
   }
 }));
 
 app.get("/", (_, res) => res.send("Server running"));
 
 app.post("/webhooks/orders-create", async (req, res) => {
-  // 1. Get shop domain from Shopify header
   const shopDomain = req.get("X-Shopify-Shop-Domain");
-  if (!shopDomain) {
-    console.warn("⚠️ Missing X-Shopify-Shop-Domain header");
-    return res.status(400).send("Missing shop domain");
-  }
+  if (!shopDomain) return res.status(400).send("Missing shop domain");
   console.log(`Webhook received from Shopify store: ${shopDomain}`);
 
-  // 2. Find the corresponding webhook secret and Lightspeed customer ID
   let webhookSecret;
   let lsCustomerID;
   for (const key in process.env) {
@@ -128,50 +131,27 @@ app.post("/webhooks/orders-create", async (req, res) => {
       break;
     }
   }
-  if (!webhookSecret || !lsCustomerID) {
-    console.warn(`⚠️ No mapping found for domain: ${shopDomain}`);
-    return res.status(401).send("Unauthorized - unknown store");
-  }
+  if (!webhookSecret || !lsCustomerID) return res.status(401).send("Unauthorized - unknown store");
 
-  // 3. Verify HMAC using the correct per-store secret
-  const hmac = crypto
-    .createHmac("sha256", webhookSecret)
-    .update(req.rawBody)
-    .digest("base64");
-  if (hmac !== req.get("X-Shopify-Hmac-Sha256")) {
-    console.warn(`⚠️ Invalid HMAC for ${shopDomain}`);
-    return res.status(401).send("Unauthorized");
-  }
+  const hmac = crypto.createHmac("sha256", webhookSecret).update(req.rawBody).digest("base64");
+  if (hmac !== req.get("X-Shopify-Hmac-Sha256")) return res.status(401).send("Unauthorized");
+
   console.log(`Webhook verified successfully for ${shopDomain}`);
 
-  // 4. Check Lightspeed token
-  if (!hasValidToken()) {
-    console.log("⏳ Lightspeed token not ready yet. Skipping order.");
-    return res.status(200).send("OK");
-  }
+  if (!hasValidToken()) return res.status(200).send("OK");
 
   const order = req.body;
-
-  // 5. Prevent duplicate processing
-  if (processedOrders.has(order.id)) {
-    console.log("🔁 Duplicate webhook ignored:", order.id);
-    return res.status(200).send("OK");
-  }
+  if (processedOrders.has(order.id)) return res.status(200).send("OK");
   processedOrders.add(order.id);
 
   try {
     console.log(`📦 Processing Shopify order #${order.id} from ${shopDomain} - Total: $${order.total_price}`);
 
     const saleLines = [];
-    const products = []; // For dashboard tracking
-
+    const products = [];
     for (const item of order.line_items || []) {
       const shopifySku = item.sku?.trim();
-      if (!shopifySku) {
-        console.warn(`⚠️ Skipping item without SKU: "${item.title}" (variant ID: ${item.variant_id})`);
-        continue;
-      }
-      console.log(`🛒 Looking up item: "${item.title}" - SKU: ${shopifySku}`);
+      if (!shopifySku) continue;
       try {
         const lsItem = await getItemBySystemSku(shopifySku);
         saleLines.push({
@@ -179,25 +159,15 @@ app.post("/webhooks/orders-create", async (req, res) => {
           quantity: Number(item.quantity),
           unitPrice: Number(item.price)
         });
-        products.push({
-          sku: shopifySku,
-          quantity: Number(item.quantity),
-          title: item.title
-        });
-        console.log(` → Added: itemID ${lsItem.itemID} × ${item.quantity} @ $${item.price}`);
+        products.push({ sku: shopifySku, quantity: Number(item.quantity), title: item.title });
       } catch (lookupErr) {
-        console.warn(` → Failed to find item in Lightspeed: ${lookupErr.message}`);
-        // Continue — don't fail entire order
+        console.warn(` → Failed to find item: ${lookupErr.message}`);
       }
     }
 
-    if (saleLines.length === 0) {
-      console.warn(`⚠️ No valid items could be synced for order #${order.id}`);
-      return res.status(200).send("OK - No syncable items");
-    }
+    if (saleLines.length === 0) return res.status(200).send("OK - No syncable items");
 
     console.log(`📊 Creating sale for Lightspeed customer ${lsCustomerID} with ${saleLines.length} line(s)`);
-
     const saleResult = await createSale({
       saleLines,
       customerID: Number(lsCustomerID)
@@ -205,7 +175,6 @@ app.post("/webhooks/orders-create", async (req, res) => {
 
     console.log(`🎉 Sale created successfully for Shopify order #${order.id} from ${shopDomain}`);
 
-    // Log success
     orderLogs.push({
       shopifyOrderId: order.id,
       shopDomain,
@@ -218,7 +187,6 @@ app.post("/webhooks/orders-create", async (req, res) => {
 
     res.status(200).send("OK");
   } catch (err) {
-    // Capture failure details
     const errorInfo = {
       shopifyOrderId: order.id,
       shopDomain,
@@ -228,10 +196,7 @@ app.post("/webhooks/orders-create", async (req, res) => {
       errorDetails: err.response?.data || err.stack || err.toString(),
       lineItemsCount: order.line_items?.length || 0
     };
-
     failedOrders.push(errorInfo);
-
-    // Log failure
     orderLogs.push({
       shopifyOrderId: order.id,
       shopDomain,
@@ -243,9 +208,8 @@ app.post("/webhooks/orders-create", async (req, res) => {
       errorDetails: err.response?.data || err.stack || err.toString()
     });
 
-    console.error(`❌ Order sync fail for Shopify order #${order?.id || "unknown"} from ${shopDomain}`);
+    console.error(`❌ Order sync failed for #${order?.id || "unknown"} from ${shopDomain}`);
     console.error("Failure details:", JSON.stringify(errorInfo, null, 2));
-
     res.status(500).send("Internal Server Error");
   }
 });
