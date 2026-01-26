@@ -6,14 +6,14 @@ const {
   hasValidToken,
   getItemBySystemSku,
   createSale,
-  refreshAccessToken   // ← FIXED: added this
+  refreshAccessToken  // ← FIXED: Added this import
 } = require("./services/lightspeed");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const processedOrders = new Set();
 
-// In-memory storage for ALL orders (success + failed) — resets on restart
+// In-memory storage for ALL orders (success + failed + skipped) — resets on restart
 const orderLogs = [];
 
 // Set EJS as view engine — point to ROOT views folder (../views from src/)
@@ -37,9 +37,7 @@ app.get("/dashboard", (req, res) => {
   });
 });
 
-// ... (rest of your code remains unchanged: /dashboard/orders, /dashboard/failed, /resync/:orderId, /refresh-token, /, /webhooks/orders-create, app.use, app.listen)
-
-// JSON API for all orders (for future use or API calls)
+// JSON API for all orders
 app.get("/dashboard/orders", (req, res) => {
   res.json({
     totalOrders: orderLogs.length,
@@ -113,7 +111,7 @@ app.get("/refresh-token", async (req, res) => {
 
 app.use(express.json({
   verify: (req, res, buf) => {
-    req.rawBody = buf;
+    req.rawBody = buf; // Required for Shopify HMAC verification
   }
 }));
 
@@ -141,9 +139,25 @@ app.post("/webhooks/orders-create", async (req, res) => {
 
   console.log(`Webhook verified successfully for ${shopDomain}`);
 
-  if (!hasValidToken()) return res.status(200).send("OK");
-
   const order = req.body;
+
+  // Log even skipped orders as "skipped"
+  orderLogs.push({
+    shopifyOrderId: order.id,
+    shopDomain,
+    lsCustomerID,
+    timestamp: new Date().toISOString(),
+    status: "skipped",
+    products: order.line_items?.map(i => ({ sku: i.sku?.trim(), quantity: i.quantity })) || [],
+    errorMessage: "Lightspeed token not ready",
+    errorDetails: "Token expired or missing — refresh running"
+  });
+
+  if (!hasValidToken()) {
+    console.log("⏳ Lightspeed token not ready yet. Skipping order.");
+    return res.status(200).send("OK");
+  }
+
   if (processedOrders.has(order.id)) return res.status(200).send("OK");
   processedOrders.add(order.id);
 
