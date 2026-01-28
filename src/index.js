@@ -45,7 +45,7 @@ app.get("/dashboard", (req, res) => {
   }
 });
 
-// JSON API for all orders (fallback)
+// JSON API for all orders
 app.get("/dashboard/orders", (req, res) => {
   res.json({
     totalOrders: orderLogs.length,
@@ -61,14 +61,14 @@ app.get("/dashboard/failed", (req, res) => {
   });
 });
 
-// Re-sync endpoint (manual)
+// Re-sync endpoint for FAILED orders (existing)
 app.post("/resync/:orderId", async (req, res) => {
   const orderId = req.params.orderId;
   const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
   if (!failed) return res.status(404).json({ error: "Order not found in failed list" });
 
   try {
-    console.log(`Manual re-sync for #${orderId} from ${failed.shopDomain}`);
+    console.log(`Manual re-sync for failed order #${orderId} from ${failed.shopDomain}`);
     const saleLines = failed.saleLines || [];
     await createSale({
       saleLines,
@@ -81,6 +81,59 @@ app.post("/resync/:orderId", async (req, res) => {
   } catch (err) {
     console.error(`Re-sync failed for #${orderId}:`, err.message);
     res.status(500).json({ error: "Re-sync failed", details: err.message });
+  }
+});
+
+// NEW: Re-process endpoint for SKIPPED orders (manual re-sync skipped)
+app.post("/resync-skipped/:orderId", async (req, res) => {
+  const orderId = req.params.orderId;
+  const skipped = orderLogs.find(o => o.shopifyOrderId === orderId && o.status === "skipped");
+  if (!skipped) return res.status(404).json({ error: "Skipped order not found or not skipped" });
+
+  try {
+    console.log(`Manual re-process for skipped order #${orderId} from ${skipped.shopDomain}`);
+
+    // Re-run the sync logic (same as webhook)
+    if (!hasValidToken()) {
+      return res.status(400).json({ error: "Lightspeed token still not ready — wait for cron refresh" });
+    }
+
+    const saleLines = [];
+    const products = [];
+    // Note: We don't have the full order body here — we use what was saved (limited data)
+    // If you need full re-processing, store the full order JSON in orderLogs (see note below)
+    for (const product of skipped.products || []) {
+      try {
+        const lsItem = await getItemBySystemSku(product.sku);
+        saleLines.push({
+          itemID: Number(lsItem.itemID),
+          quantity: Number(product.quantity),
+          unitPrice: product.price || 0
+        });
+        products.push(product);
+      } catch (lookupErr) {
+        console.warn(` → Failed to find item on retry: ${lookupErr.message}`);
+      }
+    }
+
+    if (saleLines.length === 0) {
+      return res.status(400).json({ error: "No valid items to sync on retry" });
+    }
+
+    const saleResult = await createSale({
+      saleLines,
+      customerID: Number(skipped.lsCustomerID)
+    });
+
+    console.log(`Re-process success for skipped order #${orderId} - LS Sale ID: ${saleResult.saleID}`);
+
+    skipped.status = "success (manual retry skipped)";
+    skipped.lsSaleID = saleResult.saleID || "unknown";
+
+    res.json({ success: true, message: `Re-process successful for skipped order #${orderId}` });
+  } catch (err) {
+    console.error(`Re-process failed for skipped #${orderId}:`, err.message);
+    res.status(500).json({ error: "Re-process failed", details: err.message });
   }
 });
 
@@ -136,7 +189,7 @@ app.post("/webhooks/orders-create", async (req, res) => {
 
   if (!hasValidToken()) {
     console.log("⏳ Lightspeed token not ready yet. Skipping order.");
-    orderLogs.push({
+    const skipLog = {
       shopifyOrderId: order.id,
       shopDomain,
       lsCustomerID,
@@ -145,7 +198,8 @@ app.post("/webhooks/orders-create", async (req, res) => {
       products: order.line_items?.map(i => ({ sku: i.sku?.trim(), quantity: i.quantity })) || [],
       errorMessage: "Lightspeed token not ready",
       errorDetails: "Token expired or missing — cron refresh should handle"
-    });
+    };
+    orderLogs.push(skipLog);
     return res.status(200).send("OK");
   }
 
