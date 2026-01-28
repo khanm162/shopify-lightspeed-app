@@ -6,52 +6,50 @@ const {
   hasValidToken,
   getItemBySystemSku,
   createSale,
-  refreshAccessToken  // ← FIXED: Added this import
+  refreshAccessToken
 } = require("./services/lightspeed");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const processedOrders = new Set();
 
-// In-memory storage for ALL orders (success + failed + skipped) — resets on restart
+// In-memory storage for ALL orders (success + failed + skipped)
 const orderLogs = [];
 
-// Set EJS as view engine — point to ROOT views folder (../views from src/)
+// In-memory failed orders (for quick dashboard access)
+const failedOrders = [];
+
+// Set EJS as view engine — point to ROOT views folder
 app.set('view engine', 'ejs');
 app.set('views', __dirname + '/../views');
 
 // Dashboard: HTML table view of all orders
 app.get("/dashboard", (req, res) => {
-  res.render('orders', { 
-    totalOrders: orderLogs.length, 
-    orders: orderLogs.map(o => ({
-      shopifyOrderId: o.shopifyOrderId,
-      shopDomain: o.shopDomain,
-      lsCustomerID: o.lsCustomerID,
-      timestamp: o.timestamp,
-      status: o.status,
-      products: o.products,
-      lsSaleID: o.lsSaleID,
-      errorMessage: o.errorMessage
-    }))
-  });
+  try {
+    res.render('orders', {
+      totalOrders: orderLogs.length,
+      orders: orderLogs.map(o => ({
+        shopifyOrderId: o.shopifyOrderId,
+        shopDomain: o.shopDomain,
+        lsCustomerID: o.lsCustomerID,
+        timestamp: o.timestamp,
+        status: o.status,
+        products: o.products,
+        lsSaleID: o.lsSaleID,
+        errorMessage: o.errorMessage
+      }))
+    });
+  } catch (err) {
+    console.error("Dashboard render error:", err.message);
+    res.status(500).send("Dashboard error - check server logs");
+  }
 });
 
-// JSON API for all orders
+// JSON API for all orders (fallback)
 app.get("/dashboard/orders", (req, res) => {
   res.json({
     totalOrders: orderLogs.length,
-    orders: orderLogs.map(o => ({
-      shopifyOrderId: o.shopifyOrderId,
-      shopDomain: o.shopDomain,
-      lsCustomerID: o.lsCustomerID,
-      timestamp: o.timestamp,
-      status: o.status,
-      products: o.products,
-      lsSaleID: o.lsSaleID || null,
-      errorMessage: o.errorMessage || null,
-      errorDetails: o.errorDetails || null
-    }))
+    orders: orderLogs
   });
 });
 
@@ -59,25 +57,18 @@ app.get("/dashboard/orders", (req, res) => {
 app.get("/dashboard/failed", (req, res) => {
   res.json({
     failedCount: failedOrders.length,
-    failedOrders: failedOrders.map(f => ({
-      shopifyOrderId: f.shopifyOrderId,
-      shopDomain: f.shopDomain,
-      lsCustomerID: f.lsCustomerID,
-      timestamp: f.timestamp,
-      errorMessage: f.errorMessage,
-      errorDetails: f.errorDetails
-    }))
+    failedOrders: failedOrders
   });
 });
 
-// Re-sync endpoint (POST to retry a failed order)
+// Re-sync endpoint (manual)
 app.post("/resync/:orderId", async (req, res) => {
   const orderId = req.params.orderId;
   const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
   if (!failed) return res.status(404).json({ error: "Order not found in failed list" });
 
   try {
-    console.log(`Manual re-sync requested for order #${orderId} from ${failed.shopDomain}`);
+    console.log(`Manual re-sync for #${orderId} from ${failed.shopDomain}`);
     const saleLines = failed.saleLines || [];
     await createSale({
       saleLines,
@@ -85,7 +76,7 @@ app.post("/resync/:orderId", async (req, res) => {
     });
     failedOrders.splice(failedOrders.indexOf(failed), 1);
     const logEntry = orderLogs.find(o => o.shopifyOrderId === orderId);
-    if (logEntry) logEntry.status = "success";
+    if (logEntry) logEntry.status = "success (manual retry)";
     res.json({ success: true, message: `Re-sync successful for order #${orderId}` });
   } catch (err) {
     console.error(`Re-sync failed for #${orderId}:`, err.message);
@@ -111,7 +102,7 @@ app.get("/refresh-token", async (req, res) => {
 
 app.use(express.json({
   verify: (req, res, buf) => {
-    req.rawBody = buf; // Required for Shopify HMAC verification
+    req.rawBody = buf;
   }
 }));
 
@@ -140,26 +131,23 @@ app.post("/webhooks/orders-create", async (req, res) => {
   console.log(`Webhook verified successfully for ${shopDomain}`);
 
   const order = req.body;
-
-  // Log even skipped orders as "skipped"
-  orderLogs.push({
-    shopifyOrderId: order.id,
-    shopDomain,
-    lsCustomerID,
-    timestamp: new Date().toISOString(),
-    status: "skipped",
-    products: order.line_items?.map(i => ({ sku: i.sku?.trim(), quantity: i.quantity })) || [],
-    errorMessage: "Lightspeed token not ready",
-    errorDetails: "Token expired or missing — refresh running"
-  });
+  if (processedOrders.has(order.id)) return res.status(200).send("OK");
+  processedOrders.add(order.id);
 
   if (!hasValidToken()) {
     console.log("⏳ Lightspeed token not ready yet. Skipping order.");
+    orderLogs.push({
+      shopifyOrderId: order.id,
+      shopDomain,
+      lsCustomerID,
+      timestamp: new Date().toISOString(),
+      status: "skipped",
+      products: order.line_items?.map(i => ({ sku: i.sku?.trim(), quantity: i.quantity })) || [],
+      errorMessage: "Lightspeed token not ready",
+      errorDetails: "Token expired or missing — cron refresh should handle"
+    });
     return res.status(200).send("OK");
   }
-
-  if (processedOrders.has(order.id)) return res.status(200).send("OK");
-  processedOrders.add(order.id);
 
   try {
     console.log(`📦 Processing Shopify order #${order.id} from ${shopDomain} - Total: $${order.total_price}`);
