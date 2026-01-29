@@ -75,7 +75,7 @@ loadOrdersFromRedis();
 
 // EJS setup
 app.set('view engine', 'ejs');
-app.set('views', __dirname + '/views');
+app.set('views', __dirname + '/../../views');
 
 // Dashboard - safe, no crash even if Redis down
 app.get("/dashboard", async (req, res) => {
