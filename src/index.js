@@ -126,6 +126,22 @@ app.get("/dashboard", async (req, res) => {
   });
 });
 
+console.log("All env keys:", Object.keys(process.env));  // log all keys (safe, no values)
+console.log("REDIS_URL exists?", !!process.env.REDIS_URL);
+console.log("REDIS_URL length?", process.env.REDIS_URL ? process.env.REDIS_URL.length : 0);
+
+app.get("/test-redis", async (req, res) => {
+  if (!redis) return res.json({ error: "Redis null - check env var" });
+
+  try {
+    await redis.set('test_key', 'test_value');
+    const value = await redis.get('test_key');
+    res.json({ success: true, value });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 // Debug endpoint (keep or remove later)
 app.get("/debug-order-history", async (req, res) => {
   if (!redis) {
