@@ -129,6 +129,34 @@ app.get("/dashboard", async (req, res) => {
   });
 });
 
+app.get("/debug-order-history", async (req, res) => {
+  if (!redis) {
+    return res.json({ error: "Redis not initialized" });
+  }
+
+  try {
+    const rawItems = await redis.lrange('order_history', 0, -1) || [];
+    
+    const processed = rawItems.map((item, idx) => {
+      try {
+        const parsed = JSON.parse(item);
+        return { index: idx, parsed, rawLength: item.length };
+      } catch (parseErr) {
+        return { index: idx, error: "Parse failed", raw: item.substring(0, 200) + '...' };
+      }
+    });
+
+    res.json({
+      totalInRedis: rawItems.length,
+      successfullyParsed: processed.filter(p => !p.error).length,
+      details: processed,
+      rawFirstItem: rawItems[0] ? rawItems[0].substring(0, 300) + '...' : null
+    });
+  } catch (err) {
+    res.json({ error: err.message, stack: err.stack });
+  }
+});
+
 // Other dashboard routes (unchanged, but safe)
 app.get("/dashboard/orders", (req, res) => {
   res.json({
