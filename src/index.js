@@ -8,63 +8,113 @@ const {
   createSale,
   refreshAccessToken
 } = require("./services/lightspeed");
-
 const { Redis } = require('@upstash/redis');
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN,
-});
+
+let redis;
+try {
+  if (!process.env.REDIS_URL) {
+    console.error("REDIS_URL is missing in environment variables!");
+  } else {
+    redis = new Redis({
+      url: process.env.REDIS_URL,
+    });
+    console.log("Redis client initialized successfully with REDIS_URL");
+  }
+} catch (err) {
+  console.error("Redis initialization failed:", err.message);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const processedOrders = new Set();
 
-// Persistent storage: load from Redis on startup
+// Persistent storage
 let orderLogs = [];
 let failedOrders = [];
 
 async function loadOrdersFromRedis() {
-  try {
-    const savedOrders = await redis.lrange('order_history', 0, -1);
-    orderLogs = savedOrders.map(o => JSON.parse(o)).reverse();
+  if (!redis) {
+    console.warn("Redis not initialized - skipping load");
+    return;
+  }
 
-    const savedFailed = await redis.lrange('failed_queue', 0, -1);
-    failedOrders = savedFailed.map(f => JSON.parse(f)).reverse();
+  try {
+    const savedOrders = await redis.lrange('order_history', 0, -1) || [];
+    orderLogs = savedOrders
+      .map(item => {
+        try {
+          return JSON.parse(item);
+        } catch (parseErr) {
+          console.error("Corrupted order in order_history:", item);
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .reverse();
+
+    const savedFailed = await redis.lrange('failed_queue', 0, -1) || [];
+    failedOrders = savedFailed
+      .map(item => {
+        try {
+          return JSON.parse(item);
+        } catch (parseErr) {
+          console.error("Corrupted failed order:", item);
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .reverse();
 
     console.log(`Loaded ${orderLogs.length} orders and ${failedOrders.length} queued from Redis`);
   } catch (err) {
-    console.error("Failed to load orders from Redis:", err.message);
+    console.error("Failed to load from Redis:", err.message);
   }
 }
+
 loadOrdersFromRedis();
 
-// Set EJS as view engine
+// EJS setup
 app.set('view engine', 'ejs');
-app.set('views', __dirname + '/../views');
+app.set('views', __dirname + '/views');
 
-// Dashboard
-app.get("/dashboard", (req, res) => {
+// Dashboard - safe, no crash even if Redis down
+app.get("/dashboard", async (req, res) => {
+  let enhancedOrders = [];
+  let total = 0;
+
   try {
-    res.render('orders', {
-      totalOrders: orderLogs.length,
-      orders: orderLogs.map(o => ({
-        shopifyOrderId: o.shopifyOrderId,
-        shopDomain: o.shopDomain,
-        lsCustomerID: o.lsCustomerID,
-        timestamp: o.timestamp,
-        status: o.status,
-        products: o.products,
-        lsSaleID: o.lsSaleID,
-        errorMessage: o.errorMessage
-      }))
-    });
+    // Dynamic store name mapping from ALL env vars (supports your 72 stores)
+    const storeNameMap = {};
+    for (const key in process.env) {
+      if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
+        const domainKey = key.replace('_NAME', '_DOMAIN');
+        const domain = process.env[domainKey];
+        if (domain) {
+          storeNameMap[domain] = process.env[key];
+        }
+      }
+    }
+
+    enhancedOrders = orderLogs.map(o => ({
+      ...o,
+      orderNumber: o.orderNumber || o.shopifyOrderId || '-',
+      storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
+      timestamp: o.timestamp || o.created_at || new Date().toISOString(),
+    }));
+
+    total = enhancedOrders.length;
   } catch (err) {
-    console.error("Dashboard render error:", err.message);
-    res.status(500).send("Dashboard error - check server logs");
+    console.error("Dashboard data preparation error:", err.message);
   }
+
+  // Always render something - no 500 crash
+  res.render('orders', {
+    totalOrders: total,
+    orders: enhancedOrders
+  });
 });
 
-// Other dashboard routes (unchanged)
+// Other dashboard routes (unchanged, but safe)
 app.get("/dashboard/orders", (req, res) => {
   res.json({
     totalOrders: orderLogs.length,
@@ -79,7 +129,7 @@ app.get("/dashboard/failed", (req, res) => {
   });
 });
 
-// Re-sync for failed orders (unchanged)
+// Re-sync (unchanged)
 app.post("/resync/:orderId", async (req, res) => {
   const orderId = req.params.orderId;
   const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
@@ -93,10 +143,10 @@ app.post("/resync/:orderId", async (req, res) => {
       customerID: Number(failed.lsCustomerID)
     });
     failedOrders.splice(failedOrders.indexOf(failed), 1);
-    await redis.lrem('failed_queue', 0, JSON.stringify(failed));
+    if (redis) await redis.lrem('failed_queue', 0, JSON.stringify(failed));
     const logEntry = orderLogs.find(o => o.shopifyOrderId === orderId);
     if (logEntry) logEntry.status = "success (manual retry)";
-    await redis.lpush('order_history', JSON.stringify(logEntry));
+    if (redis) await redis.lpush('order_history', JSON.stringify(logEntry));
     res.json({ success: true, message: `Re-sync successful for order #${orderId}` });
   } catch (err) {
     console.error(`Re-sync failed for #${orderId}:`, err.message);
@@ -120,14 +170,24 @@ app.get("/refresh-token", async (req, res) => {
   }
 });
 
-// Auto-retry cron (unchanged)
+// Auto-retry cron (unchanged, but safe Redis calls)
 app.get("/cron/retry-failed", async (req, res) => {
+  if (!redis) return res.status(503).send("Redis not available");
+
   try {
     const queued = await redis.lrange('failed_queue', 0, 9);
     if (queued.length === 0) return res.send("No queued orders to retry");
 
     for (const item of queued) {
-      const data = JSON.parse(item);
+      let data;
+      try {
+        data = JSON.parse(item);
+      } catch (e) {
+        console.error("Corrupted queued item:", item);
+        await redis.lrem('failed_queue', 1, item);
+        continue;
+      }
+
       if (data.retryCount >= 5) {
         console.log(`Max retries reached for #${data.shopifyOrderId}`);
         await redis.lrem('failed_queue', 1, item);
@@ -155,7 +215,6 @@ app.get("/cron/retry-failed", async (req, res) => {
         if (log) log.status = `retrying (${data.retryCount}/5)`;
       }
     }
-
     res.send(`Processed ${queued.length} queued retries`);
   } catch (err) {
     console.error("Retry cron error:", err.message);
@@ -186,9 +245,10 @@ app.post("/webhooks/orders-create", async (req, res) => {
       break;
     }
   }
+
   if (!webhookSecret || !lsCustomerID) return res.status(401).send("Unauthorized - unknown store");
 
-  // ── TEMPORARY HMAC BYPASS FOR MANUAL RESYNC ────────────────────────────────
+  // TEMPORARY HMAC BYPASS FOR MANUAL RESYNC
   const isManualTest = req.query.manual === 'true';
   if (!isManualTest) {
     const hmac = crypto.createHmac("sha256", webhookSecret).update(req.rawBody).digest("base64");
@@ -198,7 +258,6 @@ app.post("/webhooks/orders-create", async (req, res) => {
     }
   }
   console.log(`Webhook verified successfully for ${shopDomain} (manual test: ${isManualTest})`);
-  // ──────────────────────────────────────────────────────────────────────────────
 
   const order = req.body;
   if (processedOrders.has(order.id)) return res.status(200).send("OK");
@@ -219,14 +278,15 @@ app.post("/webhooks/orders-create", async (req, res) => {
       saleLines: []
     };
     orderLogs.push(skipInfo);
-    await redis.lpush('order_history', JSON.stringify(skipInfo));
-    await redis.lpush('failed_queue', JSON.stringify(skipInfo));
+    if (redis) {
+      await redis.lpush('order_history', JSON.stringify(skipInfo)).catch(e => console.error("Redis push failed:", e));
+      await redis.lpush('failed_queue', JSON.stringify(skipInfo)).catch(e => console.error("Redis push failed:", e));
+    }
     return res.status(200).send("OK");
   }
 
   try {
     console.log(`📦 Processing Shopify order #${order.id} from ${shopDomain} - Total: $${order.total_price}`);
-
     const saleLines = [];
     const products = [];
     for (const item of order.line_items || []) {
@@ -254,7 +314,6 @@ app.post("/webhooks/orders-create", async (req, res) => {
     });
 
     console.log(`🎉 Sale created successfully for Shopify order #${order.id} from ${shopDomain}`);
-
     const successLog = {
       shopifyOrderId: order.id,
       shopDomain,
@@ -265,8 +324,7 @@ app.post("/webhooks/orders-create", async (req, res) => {
       lsSaleID: saleResult.saleID || "unknown"
     };
     orderLogs.push(successLog);
-    await redis.lpush('order_history', JSON.stringify(successLog));
-
+    if (redis) await redis.lpush('order_history', JSON.stringify(successLog)).catch(e => console.error("Redis push failed:", e));
     res.status(200).send("OK");
   } catch (err) {
     const errorInfo = {
@@ -289,10 +347,10 @@ app.post("/webhooks/orders-create", async (req, res) => {
       errorMessage: err.message,
       errorDetails: err.response?.data || err.stack || err.toString()
     });
-
-    await redis.lpush('order_history', JSON.stringify(errorInfo));
-    await redis.lpush('failed_queue', JSON.stringify(errorInfo));
-
+    if (redis) {
+      await redis.lpush('order_history', JSON.stringify(errorInfo)).catch(e => console.error("Redis push failed:", e));
+      await redis.lpush('failed_queue', JSON.stringify(errorInfo)).catch(e => console.error("Redis push failed:", e));
+    }
     console.error(`❌ Order sync failed for #${order?.id || "unknown"} from ${shopDomain}`);
     console.error("Failure details:", JSON.stringify(errorInfo, null, 2));
     res.status(500).send("Internal Server Error");
