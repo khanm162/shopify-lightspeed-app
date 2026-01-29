@@ -79,13 +79,13 @@ const path = require('path');
 app.set('view engine', 'ejs');
 app.set('views', path.join(process.cwd(), 'views'));
 
-// Dashboard - safe render
+// Dashboard - always load fresh from Redis
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
 
   try {
-    // Dynamic store name mapping (your 72 stores)
+    // Dynamic store name mapping
     const storeNameMap = {};
     for (const key in process.env) {
       if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
@@ -97,7 +97,21 @@ app.get("/dashboard", async (req, res) => {
       }
     }
 
-    enhancedOrders = orderLogs.map(o => ({
+    // Load fresh from Redis every request
+    const rawOrders = await redis.lrange('order_history', 0, -1) || [];
+    const orders = rawOrders
+      .map(item => {
+        try {
+          return JSON.parse(item);
+        } catch (err) {
+          console.error("Corrupted order on dashboard load:", item);
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .reverse(); // newest first
+
+    enhancedOrders = orders.map(o => ({
       ...o,
       orderNumber: o.orderNumber || o.shopifyOrderId || '-',
       storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
@@ -106,7 +120,7 @@ app.get("/dashboard", async (req, res) => {
 
     total = enhancedOrders.length;
   } catch (err) {
-    console.error("Dashboard data preparation error:", err.message);
+    console.error("Dashboard load error:", err.message);
   }
 
   res.render('orders', {
