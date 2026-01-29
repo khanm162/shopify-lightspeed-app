@@ -75,17 +75,17 @@ loadOrdersFromRedis();
 
 const path = require('path');
 
-// Set EJS as view engine
+// Set EJS as view engine - FIXED for Vercel
 app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, '..', '..', 'views'));
+app.set('views', path.join(process.cwd(), 'views'));
 
-// Dashboard - safe, no crash even if Redis down
+// Dashboard - safe render
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
 
   try {
-    // Dynamic store name mapping from ALL env vars (supports your 72 stores)
+    // Dynamic store name mapping (your 72 stores)
     const storeNameMap = {};
     for (const key in process.env) {
       if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
@@ -109,7 +109,6 @@ app.get("/dashboard", async (req, res) => {
     console.error("Dashboard data preparation error:", err.message);
   }
 
-  // Always render something - no 500 crash
   res.render('orders', {
     totalOrders: total,
     orders: enhancedOrders
