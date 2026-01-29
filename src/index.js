@@ -8,11 +8,10 @@ const {
   createSale,
   refreshAccessToken
 } = require("./services/lightspeed");
-
 const { Redis } = require('@upstash/redis');
+
 const redis = new Redis({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN,
+  url: process.env.REDIS_URL,
 });
 
 const app = express();
@@ -25,42 +24,77 @@ let failedOrders = [];
 
 async function loadOrdersFromRedis() {
   try {
-    const savedOrders = await redis.lrange('order_history', 0, -1);
-    orderLogs = savedOrders.map(o => JSON.parse(o)).reverse();
+    // Load order history (LIST)
+    const savedOrders = await redis.lrange('order_history', 0, -1) || [];
+    orderLogs = savedOrders
+      .map(item => {
+        try {
+          return JSON.parse(item);
+        } catch (err) {
+          console.error("Corrupted order in order_history:", item);
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .reverse(); // newest first
 
-    const savedFailed = await redis.lrange('failed_queue', 0, -1);
-    failedOrders = savedFailed.map(f => JSON.parse(f)).reverse();
+    // Load failed queue
+    const savedFailed = await redis.lrange('failed_queue', 0, -1) || [];
+    failedOrders = savedFailed
+      .map(item => {
+        try {
+          return JSON.parse(item);
+        } catch (err) {
+          console.error("Corrupted failed order:", item);
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .reverse();
 
     console.log(`Loaded ${orderLogs.length} orders and ${failedOrders.length} queued from Redis`);
   } catch (err) {
     console.error("Failed to load orders from Redis:", err.message);
   }
 }
+
 loadOrdersFromRedis();
 
 // Set EJS as view engine
 app.set('view engine', 'ejs');
-app.set('views', __dirname + '/../views');
+app.set('views', __dirname + '/views'); // fixed path (no /../)
 
-// Dashboard
-app.get("/dashboard", (req, res) => {
+// Dashboard route - this is where we prepare data for orders.ejs
+app.get("/dashboard", async (req, res) => {
   try {
+    // Store name mapping from environment variables
+    const storeNameMap = {
+      'seksewine.myshopify.com': process.env.SHOPIFY_STORE_1_NAME || 'Sekse Wine',
+      'buyironsmoke.com': process.env.SHOPIFY_STORE_2_NAME || 'Iron Smoke Distillery',
+      'mythologydistillery.shop': process.env.SHOPIFY_STORE_3_NAME || 'Mythology Distillery',
+      'tccrafttequila.myshopify.com': process.env.SHOPIFY_STORE_4_NAME || 'TC Craft Tequila',
+      'awspirits.myshopify.com': process.env.SHOPIFY_STORE_5_NAME || 'AW Spirits',
+      // Add more stores here as needed
+    };
+
+    // Enhance orders for dashboard
+    const enhancedOrders = orderLogs.map(o => ({
+      ...o,
+      orderNumber: o.orderNumber || o.shopifyOrderId || '-',
+      storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
+      timestamp: o.timestamp || o.created_at || new Date().toISOString(),
+    }));
+
     res.render('orders', {
-      totalOrders: orderLogs.length,
-      orders: orderLogs.map(o => ({
-        shopifyOrderId: o.shopifyOrderId,
-        shopDomain: o.shopDomain,
-        lsCustomerID: o.lsCustomerID,
-        timestamp: o.timestamp,
-        status: o.status,
-        products: o.products,
-        lsSaleID: o.lsSaleID,
-        errorMessage: o.errorMessage
-      }))
+      totalOrders: enhancedOrders.length,
+      orders: enhancedOrders
     });
   } catch (err) {
     console.error("Dashboard render error:", err.message);
-    res.status(500).send("Dashboard error - check server logs");
+    res.render('orders', {
+      totalOrders: 0,
+      orders: []
+    });
   }
 });
 
@@ -84,7 +118,6 @@ app.post("/resync/:orderId", async (req, res) => {
   const orderId = req.params.orderId;
   const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
   if (!failed) return res.status(404).json({ error: "Order not found in failed list" });
-
   try {
     console.log(`Manual re-sync for #${orderId} from ${failed.shopDomain}`);
     const saleLines = failed.saleLines || [];
@@ -125,7 +158,6 @@ app.get("/cron/retry-failed", async (req, res) => {
   try {
     const queued = await redis.lrange('failed_queue', 0, 9);
     if (queued.length === 0) return res.send("No queued orders to retry");
-
     for (const item of queued) {
       const data = JSON.parse(item);
       if (data.retryCount >= 5) {
@@ -135,7 +167,6 @@ app.get("/cron/retry-failed", async (req, res) => {
         if (log) log.status = "permanent fail (max retries)";
         continue;
       }
-
       try {
         await createSale({
           saleLines: data.saleLines,
@@ -155,7 +186,6 @@ app.get("/cron/retry-failed", async (req, res) => {
         if (log) log.status = `retrying (${data.retryCount}/5)`;
       }
     }
-
     res.send(`Processed ${queued.length} queued retries`);
   } catch (err) {
     console.error("Retry cron error:", err.message);
@@ -186,6 +216,7 @@ app.post("/webhooks/orders-create", async (req, res) => {
       break;
     }
   }
+
   if (!webhookSecret || !lsCustomerID) return res.status(401).send("Unauthorized - unknown store");
 
   // ── TEMPORARY HMAC BYPASS FOR MANUAL RESYNC ────────────────────────────────
@@ -226,7 +257,6 @@ app.post("/webhooks/orders-create", async (req, res) => {
 
   try {
     console.log(`📦 Processing Shopify order #${order.id} from ${shopDomain} - Total: $${order.total_price}`);
-
     const saleLines = [];
     const products = [];
     for (const item of order.line_items || []) {
@@ -254,7 +284,6 @@ app.post("/webhooks/orders-create", async (req, res) => {
     });
 
     console.log(`🎉 Sale created successfully for Shopify order #${order.id} from ${shopDomain}`);
-
     const successLog = {
       shopifyOrderId: order.id,
       shopDomain,
@@ -266,7 +295,6 @@ app.post("/webhooks/orders-create", async (req, res) => {
     };
     orderLogs.push(successLog);
     await redis.lpush('order_history', JSON.stringify(successLog));
-
     res.status(200).send("OK");
   } catch (err) {
     const errorInfo = {
@@ -289,10 +317,8 @@ app.post("/webhooks/orders-create", async (req, res) => {
       errorMessage: err.message,
       errorDetails: err.response?.data || err.stack || err.toString()
     });
-
     await redis.lpush('order_history', JSON.stringify(errorInfo));
     await redis.lpush('failed_queue', JSON.stringify(errorInfo));
-
     console.error(`❌ Order sync failed for #${order?.id || "unknown"} from ${shopDomain}`);
     console.error("Failure details:", JSON.stringify(errorInfo, null, 2));
     res.status(500).send("Internal Server Error");

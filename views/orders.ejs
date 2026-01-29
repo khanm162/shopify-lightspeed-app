@@ -2,69 +2,163 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Order Sync Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
-    table { width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background: #eee; }
-    .failed { color: red; }
-    .success { color: green; }
-    button { padding: 5px 10px; background: #4CAF50; color: white; border: none; cursor: pointer; }
-    button:hover { background: #45a049; }
+    body {
+      font-family: -apple-system, BlinkMacOSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8f9fa;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    h1 {
+      margin-top: 0;
+      color: #2c3e50;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .search-filter {
+      margin-bottom: 15px;
+    }
+    #search-input {
+      padding: 10px;
+      width: 300px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    th {
+      background: #34495e;
+      color: white;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { background: #2c3e50; }
+    tr:hover { background: #f1f5f9; }
+    .status-success { color: #27ae60; font-weight: bold; }
+    .status-failed, .status-skipped { color: #e74c3c; font-weight: bold; }
+    .products { font-size: 0.92em; line-height: 1.4; }
+    .error-msg { color: #c0392b; max-width: 300px; white-space: pre-wrap; }
+    button {
+      padding: 6px 12px;
+      background: #e67e22;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+    button:hover { background: #d35400; }
+    .empty { text-align: center; color: #777; padding: 40px; font-size: 1.1em; }
   </style>
 </head>
 <body>
-  <h1>Order Sync Dashboard</h1>
-  <p>Total Orders: <%= totalOrders %></p>
-  <table>
-    <thead>
-      <tr>
-        <th>Shopify Order ID</th>
-        <th>Store Domain</th>
-        <th>LS Customer ID</th>
-        <th>Timestamp</th>
-        <th>Status</th>
-        <th>Products (SKU x Quantity)</th>
-        <th>LS Sale ID</th>
-        <th>Error Message</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      <% orders.forEach(o => { %>
-        <tr>
-          <td><%= o.shopifyOrderId %></td>
-          <td><%= o.shopDomain %></td>
-          <td><%= o.lsCustomerID %></td>
-          <td><%= o.timestamp %></td>
-          <td class="<%= o.status === 'success' ? 'success' : 'failed' %>"><%= o.status %></td>
-          <td>
-            <% o.products.forEach(p => { %>
-              <%= p.sku %> x <%= p.quantity %><br>
-            <% }); %>
-          </td>
-          <td><%= o.lsSaleID || '-' %></td>
-          <td><%= o.errorMessage || '-' %></td>
-          <td>
-            <% if (o.status === 'failed') { %>
-              <button onclick="resync('<%= o.shopifyOrderId %>')">Re-sync</button>
-            <% } %>
-          </td>
-        </tr>
-      <% }); %>
-    </tbody>
-  </table>
+  <div class="container">
+    <div class="header">
+      <h1>Order Sync Dashboard</h1>
+      <div>Total Orders: <%= orders.length %></div>
+    </div>
+
+    <div class="search-filter">
+      <input type="text" id="search-input" placeholder="Filter by order #, store, status, date, error..." />
+    </div>
+
+    <% if (orders.length === 0) { %>
+      <div class="empty">No orders found yet. New orders will appear here automatically.</div>
+    <% } else { %>
+      <table id="orders-table">
+        <thead>
+          <tr>
+            <th data-sort="orderNumber">Order #</th>
+            <th data-sort="storeName">Store Name</th>
+            <th data-sort="timestamp">Timestamp</th>
+            <th data-sort="status">Status</th>
+            <th>Products (Title + SKU × Qty)</th>
+            <th>Error Message</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody class="list">
+          <% orders.forEach(o => { %>
+            <tr>
+              <td class="orderNumber"><%= o.orderNumber || o.shopifyOrderId || '-' %></td>
+              <td class="storeName"><%= o.storeName || o.shopDomain || 'Unknown' %></td>
+              <td class="timestamp"><%= new Date(o.timestamp).toLocaleString() %></td>
+              <td class="status <%= o.status === 'success' ? 'status-success' : (o.status === 'failed' || o.status === 'skipped' ? 'status-failed' : '') %>">
+                <%= o.status.charAt(0).toUpperCase() + o.status.slice(1) %>
+              </td>
+              <td class="products">
+                <% (o.products || []).forEach(p => { %>
+                  <div><%= p.title || 'Unknown' %> (<%= p.sku %> × <%= p.quantity %>)</div>
+                <% }); %>
+              </td>
+              <td class="error-msg"><%= o.errorMessage || '-' %></td>
+              <td>
+                <% if (o.status === 'failed' || o.status === 'skipped') { %>
+                  <button onclick="resync('<%= o.shopifyOrderId %>')">Re-sync</button>
+                <% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
 
   <script>
+    // Initialize List.js for filtering & sorting
+    const options = {
+      valueNames: ['orderNumber', 'storeName', 'timestamp', 'status'],
+      searchClass: 'search',
+      sortClass: 'sort'
+    };
+    const userList = new List('orders-table', options);
+
+    // Make table headers clickable for sorting
+    document.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const sortBy = th.getAttribute('data-sort');
+        const current = th.classList.contains('asc') ? 'desc' : 'asc';
+        document.querySelectorAll('th').forEach(t => t.classList.remove('asc', 'desc'));
+        th.classList.add(current);
+        userList.sort(sortBy, { order: current });
+      });
+    });
+
     async function resync(orderId) {
+      if (!confirm(`Re-sync Shopify order #${orderId}?`)) return;
+
       try {
         const res = await fetch(`/resync/${orderId}`, { method: 'POST' });
+        const text = await res.text();
         if (res.ok) {
-          alert('Re-sync successful!');
-          location.reload(); // Reload dashboard
+          alert('Re-sync triggered successfully!');
+          location.reload();
         } else {
-          alert('Re-sync failed: ' + await res.text());
+          alert('Re-sync failed:\n' + text);
         }
       } catch (err) {
         alert('Error: ' + err.message);
