@@ -93,7 +93,9 @@ app.get("/dashboard", async (req, res) => {
         if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
           const domainKey = key.replace('_NAME', '_DOMAIN');
           const domain = process.env[domainKey];
-          if (domain) storeNameMap[domain] = process.env[key];
+          if (domain) {
+            storeNameMap[domain] = process.env[key];
+          }
         }
       }
 
@@ -104,10 +106,14 @@ app.get("/dashboard", async (req, res) => {
         .map((item, idx) => {
           try {
             const parsed = JSON.parse(item);
-            console.log(`[DASHBOARD] Successfully parsed item #${idx}`);
+            console.log(`[DASHBOARD] Parsed item #${idx} successfully`);
             return parsed;
           } catch (err) {
-            console.error(`[DASHBOARD] Corrupted item #${idx}:`, item.substring(0, 300));
+            const itemPreview = typeof item === 'string' 
+              ? item.substring(0, 300) + (item.length > 300 ? '...' : '')
+              : `non-string (${typeof item})`;
+
+            console.error(`Dashboard: Corrupted item #${idx}:`, itemPreview, err.message);
             return null;
           }
         })
@@ -124,7 +130,7 @@ app.get("/dashboard", async (req, res) => {
       total = enhancedOrders.length;
       console.log(`[DASHBOARD] Final visible orders: ${total}`);
     } catch (err) {
-      console.error("Dashboard load error:", err.message);
+      console.error("Dashboard overall load error:", err.message);
     }
   }
 
