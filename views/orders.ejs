@@ -5,121 +5,157 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Order Sync Dashboard</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(to bottom, #f0f4f8, #d9e2ec);
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background: #f9f9f9;
       margin: 0;
       padding: 20px;
-      color: #333;
+      color: #000;
+      font-size: 14px;
+      line-height: 1.4;
     }
     .container {
-      max-width: 1200px;
+      max-width: 1600px;
       margin: 0 auto;
       background: white;
-      border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-      padding: 20px;
-    }
-    h1 {
-      color: #1a237e;
-      margin-top: 0;
+      border-radius: 10px;
+      box-shadow: 0 2px 15px rgba(0,0,0,0.08);
+      overflow: hidden;
     }
     .header {
+      background: #000;
+      color: white;
+      padding: 16px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    .total {
+      font-size: 1.1rem;
     }
     .search-filter {
-      margin-bottom: 20px;
+      padding: 16px 20px;
+      background: #f9f9f9;
+      border-bottom: 1px solid #eee;
+    }
+    .search-wrapper {
+      position: relative;
+      max-width: 500px;
     }
     #search-input {
       width: 100%;
-      padding: 12px;
+      padding: 10px 12px 10px 36px;
       border: 1px solid #ccc;
-      border-radius: 8px;
-      font-size: 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+      transition: all 0.2s;
+    }
+    #search-input:focus {
+      border-color: #000;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+    }
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #555;
     }
     table {
       width: 100%;
       border-collapse: collapse;
+      font-size: 13px;
     }
     th, td {
-      padding: 12px;
+      padding: 10px 12px;
       text-align: left;
       border-bottom: 1px solid #eee;
     }
     th {
-      background: linear-gradient(to bottom, #3f51b5, #303f9f);
+      background: #000;
       color: white;
+      font-weight: 600;
       position: sticky;
       top: 0;
       z-index: 1;
       cursor: pointer;
+      user-select: none;
     }
     th:hover {
-      background: linear-gradient(to bottom, #303f9f, #1a237e);
+      background: #111;
     }
     tr:hover {
-      background: #f8f9fa;
+      background: #f5f5f5;
     }
     .status {
-      font-weight: bold;
+      font-weight: 600;
     }
-    .status-success { color: #2e7d32; }
-    .status-failed { color: #c62828; }
-    .status-skipped { color: #f57c00; }
+    .status-success {
+      color: #006400;
+    }
+    .status-failed {
+      color: #8B0000;
+    }
+    .status-skipped {
+      color: #8B4513;
+    }
     .products {
-      font-size: 0.9em;
-      line-height: 1.5;
+      line-height: 1.4;
+      white-space: pre-wrap;
     }
-    button {
+    .error-msg {
+      color: #8B0000;
+      max-width: 300px;
+      word-break: break-word;
+    }
+    .action-btn {
       padding: 6px 12px;
-      background: #3f51b5;
+      background: #000;
       color: white;
       border: none;
-      border-radius: 6px;
+      border-radius: 4px;
       cursor: pointer;
+      font-size: 13px;
     }
-    button:hover {
-      background: #303f9f;
+    .action-btn:hover {
+      background: #222;
     }
     .empty {
       text-align: center;
-      color: #757575;
-      padding: 40px;
-      font-size: 1.2em;
+      padding: 60px 20px;
+      color: #555;
+      font-size: 1.1rem;
     }
-    /* Responsive Design */
-    @media (max-width: 768px) {
+    /* Responsive */
+    @media (max-width: 992px) {
       table {
-        border: 0;
+        min-width: 800px; /* force horizontal scroll on small screens */
       }
-      thead {
-        display: none;
+      .container {
+        padding: 0;
       }
-      tr {
-        display: block;
-        margin-bottom: 15px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        padding: 10px;
+      .header, .search-filter {
+        padding: 16px;
       }
-      td {
-        display: block;
-        text-align: right;
-        position: relative;
-        padding-left: 50%;
+    }
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
       }
-      td::before {
-        content: attr(data-label);
-        position: absolute;
-        left: 0;
-        width: 45%;
-        padding-left: 10px;
-        font-weight: bold;
+      th, td {
+        font-size: 12px;
+        padding: 8px;
       }
     }
   </style>
@@ -128,11 +164,14 @@
   <div class="container">
     <div class="header">
       <h1>Order Sync Dashboard</h1>
-      <div>Total Orders: <%= totalOrders %></div>
+      <div class="total">Total Orders: <%= totalOrders %></div>
     </div>
 
     <div class="search-filter">
-      <input type="text" id="search-input" placeholder="Filter by order #, store, timestamp, status, product, error..." />
+      <div class="search-wrapper">
+        <i class="fas fa-search search-icon"></i>
+        <input type="text" id="search-input" placeholder="Filter by order #, store, timestamp, status, product, error..." />
+      </div>
     </div>
 
     <% if (orders.length === 0) { %>
@@ -141,33 +180,40 @@
       <table id="orders-table">
         <thead>
           <tr>
-            <th data-sort="orderNumber">Order #</th>
-            <th data-sort="storeName">Store Name</th>
-            <th data-sort="timestamp">Timestamp (EST)</th>
-            <th data-sort="status">Status</th>
-            <th data-label="Products">Products (Title + SKU x Qty)</th>
-            <th data-label="Error">Error Message</th>
-            <th data-label="Action">Action</th>
+            <th data-sort="orderNumber">Order # <i class="fas fa-sort"></i></th>
+            <th data-sort="storeName">Store Name <i class="fas fa-sort"></i></th>
+            <th data-sort="timestamp">Timestamp (EST) <i class="fas fa-sort"></i></th>
+            <th data-sort="status">Status <i class="fas fa-sort"></i></th>
+            <th>Products (Title + SKU x Qty)</th>
+            <th>Error Message</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody class="list">
           <% orders.forEach(o => { %>
             <tr>
-              <td data-label="Order #" class="orderNumber"><%= o.orderNumber %></td>
-              <td data-label="Store Name" class="storeName"><%= o.storeName %></td>
-              <td data-label="Timestamp" class="timestamp"><%= new Date(o.timestamp).toLocaleString('en-US', { timeZone: 'America/New_York' }) %></td>
+              <td data-label="Order #" class="orderNumber"><%= o.name || o.orderNumber || o.shopifyOrderId || '-' %></td>
+              <td data-label="Store Name" class="storeName"><%= o.storeName || o.shopDomain || 'Unknown' %></td>
+              <td data-label="Timestamp" class="timestamp">
+                <%= new Date(o.timestamp).toLocaleString('en-US', { 
+                  timeZone: 'America/New_York',
+                  month: 'numeric', day: 'numeric', year: 'numeric',
+                  hour: 'numeric', minute: '2-digit', hour12: true 
+                }) %>
+              </td>
               <td data-label="Status" class="status <%= o.status %>">
-                <i class="fas fa-<%= o.status === 'success' ? 'check-circle' : 'exclamation-circle' %>"></i> <%= o.status %>
+                <i class="fas fa-<%= o.status === 'success' ? 'check-circle' : 'exclamation-circle' %>"></i>
+                <%= o.status %>
               </td>
               <td data-label="Products" class="products">
                 <% (o.products || []).forEach(p => { %>
-                  <div><%= p.title %> (<%= p.sku %> x <%= p.quantity %>)</div>
+                  <div><%= p.title %> (<%= p.sku %> × <%= p.quantity %>)</div>
                 <% }); %>
               </td>
-              <td data-label="Error" class="error-msg"><%= o.errorMessage || '-' %></td>
+              <td data-label="Error Message" class="error-msg"><%= o.errorMessage || '-' %></td>
               <td data-label="Action">
                 <% if (o.status === 'failed' || o.status === 'skipped') { %>
-                  <button onclick="resync('<%= o.shopifyOrderId %>')">Re-sync</button>
+                  <button class="action-btn" onclick="resync('<%= o.shopifyOrderId %>')">Re-sync</button>
                 <% } %>
               </td>
             </tr>
@@ -178,7 +224,7 @@
   </div>
 
   <script>
-    // Initialize List.js for filtering & sorting
+    // List.js - live filtering as you type
     const options = {
       valueNames: ['orderNumber', 'storeName', 'timestamp', 'status'],
       searchClass: 'search',
@@ -186,9 +232,8 @@
     };
     const userList = new List('orders-table', options);
 
-    // Sorting with icons
+    // Sorting with visual feedback
     document.querySelectorAll('th[data-sort]').forEach(th => {
-      th.innerHTML += ' <i class="fas fa-sort"></i>';
       th.addEventListener('click', () => {
         const sortBy = th.getAttribute('data-sort');
         const current = th.classList.contains('asc') ? 'desc' : 'asc';
@@ -200,7 +245,6 @@
 
     async function resync(orderId) {
       if (!confirm(`Re-sync order #${orderId}?`)) return;
-
       try {
         const res = await fetch(`/resync/${orderId}`, { method: 'POST' });
         if (res.ok) {

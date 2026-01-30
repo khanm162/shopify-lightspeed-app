@@ -332,6 +332,7 @@ return res.status(200).send("OK");
 
     const successLog = {
   shopifyOrderId: order.id,
+  name: order.name,
   shopDomain,
   lsCustomerID,
   timestamp: new Date().toISOString(),
@@ -349,6 +350,7 @@ res.status(200).send("OK");
   } catch (err) {
     const errorInfo = {
       shopifyOrderId: order.id,
+	  name: order.name,
       shopDomain,
       lsCustomerID,
       timestamp: new Date().toISOString(),
