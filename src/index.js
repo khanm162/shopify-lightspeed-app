@@ -11,14 +11,14 @@ const {
 } = require("./services/lightspeed");
 const { Redis } = require('@upstash/redis');
 
-// Safe stringify to handle undefined, errors, non-serializable values
+// Safe stringify - handles undefined, errors, BigInt, etc.
 function safeStringify(obj) {
   return JSON.stringify(obj, (key, value) => {
     if (value === undefined) return null;
     if (value instanceof Error) return { message: value.message, stack: value.stack };
     if (typeof value === 'bigint') return value.toString();
     return value;
-  }, 2); // pretty print for debug
+  }, 2);
 }
 
 // Initialize Redis
@@ -52,6 +52,10 @@ async function loadOrdersFromRedis() {
     const savedOrders = await redis.lrange('order_history', 0, -1) || [];
     orderLogs = savedOrders
       .map(item => {
+        if (typeof item !== 'string') {
+          console.warn("Startup: Non-string in order_history:", item);
+          return null;
+        }
         try { return JSON.parse(item); }
         catch (e) { console.error("Startup corrupted:", item.substring(0, 200)); return null; }
       })
@@ -61,6 +65,10 @@ async function loadOrdersFromRedis() {
     const savedFailed = await redis.lrange('failed_queue', 0, -1) || [];
     failedOrders = savedFailed
       .map(item => {
+        if (typeof item !== 'string') {
+          console.warn("Startup: Non-string in failed_queue:", item);
+          return null;
+        }
         try { return JSON.parse(item); }
         catch (e) { console.error("Startup failed corrupted:", item.substring(0, 200)); return null; }
       })
@@ -80,13 +88,12 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(process.cwd(), 'views'));
 
 // Dashboard
-// Dashboard - loads FRESH from Redis every request
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
 
   if (!redis) {
-    console.warn("Redis unavailable - dashboard showing empty");
+    console.warn("Redis unavailable - dashboard empty");
   } else {
     try {
       const storeNameMap = {};
@@ -94,39 +101,31 @@ app.get("/dashboard", async (req, res) => {
         if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
           const domainKey = key.replace('_NAME', '_DOMAIN');
           const domain = process.env[domainKey];
-          if (domain) {
-            storeNameMap[domain] = process.env[key];
-          }
+          if (domain) storeNameMap[domain] = process.env[key];
         }
       }
 
       const rawOrders = await redis.lrange('order_history', 0, -1) || [];
-      console.log(`[DASHBOARD] Fetched ${rawOrders.length} raw items from Redis`);
+      console.log(`[DASHBOARD] Fetched ${rawOrders.length} raw items`);
 
       const orders = rawOrders
         .map((item, idx) => {
-          if (item === null || item === undefined) {
-            console.warn(`[DASHBOARD] Null/undefined item at index #${idx}`);
-            return null;
-          }
-
           if (typeof item !== 'string') {
-            console.error(`[DASHBOARD] Non-string item at #${idx}:`, typeof item, item);
+            console.error(`[DASHBOARD] Non-string item #${idx} (type ${typeof item}):`, item);
             return null;
           }
-
           try {
             const parsed = JSON.parse(item);
-            console.log(`[DASHBOARD] Successfully parsed item #${idx} (ID: ${parsed.shopifyOrderId || 'unknown'})`);
+            console.log(`[DASHBOARD] Parsed #${idx} OK (ID: ${parsed.shopifyOrderId || 'unknown'})`);
             return parsed;
           } catch (err) {
-            console.error(`[DASHBOARD] JSON parse failed on item #${idx}:`, err.message);
-            console.error("Raw item preview:", item.substring(0, 300) + (item.length > 300 ? '...' : ''));
+            console.error(`[DASHBOARD] Parse fail on #${idx}:`, err.message);
+            console.error("Raw preview:", item.substring(0, 300));
             return null;
           }
         })
-        .filter(item => item !== null)
-        .reverse(); // newest first
+        .filter(Boolean)
+        .reverse();
 
       enhancedOrders = orders.map(o => ({
         ...o,
@@ -136,9 +135,9 @@ app.get("/dashboard", async (req, res) => {
       }));
 
       total = enhancedOrders.length;
-      console.log(`[DASHBOARD] Final rendered orders: ${total}`);
+      console.log(`[DASHBOARD] Rendered ${total} orders`);
     } catch (err) {
-      console.error("[DASHBOARD] Overall load error:", err.message, err.stack);
+      console.error("Dashboard load error:", err.message);
     }
   }
 
