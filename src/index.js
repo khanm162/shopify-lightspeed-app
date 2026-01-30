@@ -167,6 +167,44 @@ app.get("/dashboard", async (req, res) => {
   });
 });
 
+// Re-sync failed/skipped order (POST)
+app.post("/resync/:orderId", async (req, res) => {
+  console.log(`[RESYNC] POST request received for orderId: ${req.params.orderId}`);
+
+  const orderId = req.params.orderId;
+  const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
+  if (!failed) {
+    console.log("[RESYNC] Order not found in failedOrders");
+    return res.status(404).json({ error: "Order not found in failed list" });
+  }
+
+  try {
+    console.log(`[RESYNC] Manual re-sync for #${orderId} from ${failed.shopDomain}`);
+    const saleLines = failed.saleLines || [];
+    await createSale({
+      saleLines,
+      customerID: Number(failed.lsCustomerID)
+    });
+    // Remove from memory
+    failedOrders.splice(failedOrders.indexOf(failed), 1);
+    // Remove from Redis
+    if (redis) {
+      await redis.lrem('failed_queue', 0, JSON.stringify(failed));
+      console.log("[RESYNC] Removed from failed_queue");
+    }
+    // Update log in memory & Redis
+    const logEntry = orderLogs.find(o => o.shopifyOrderId === orderId);
+    if (logEntry) {
+      logEntry.status = "success (manual retry)";
+      if (redis) await redis.lpush('order_history', JSON.stringify(logEntry));
+      console.log("[RESYNC] Updated logEntry status");
+    }
+    res.json({ success: true, message: `Re-sync successful for order #${orderId}` });
+  } catch (err) {
+    console.error(`[RESYNC] Failed for #${orderId}:`, err.message);
+    res.status(500).json({ error: "Re-sync failed", details: err.message });
+  }
+});
 
 // Token refresh (improved logging)
 app.get("/refresh-token", async (req, res) => {
