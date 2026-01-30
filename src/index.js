@@ -330,10 +330,9 @@ return res.status(200).send("OK");
 
     console.log(`🎉 Sale created successfully for Shopify order #${order.id} from ${shopDomain}`);
 
-  // In success block (after createSale)
-const successLog = {
+    const successLog = {
   shopifyOrderId: order.id,
-  name: order.name, // ← ADD THIS LINE
+  name: order.name,
   shopDomain,
   lsCustomerID,
   timestamp: new Date().toISOString(),
@@ -347,18 +346,18 @@ if (redis) {
   console.log("[WEBHOOK] Saving success log:", stringified.substring(0, 200));
   await redis.lpush('order_history', stringified);
 }
-
-// In error block
-const errorInfo = {
-  shopifyOrderId: order.id,
-  name: order.name, // ← ADD THIS LINE
-  shopDomain,
-  lsCustomerID,
-  timestamp: new Date().toISOString(),
-  errorMessage: err.message,
-  errorDetails: err.response?.data || err.stack || err.toString(),
-  lineItemsCount: order.line_items?.length || 0
-};
+res.status(200).send("OK");
+  } catch (err) {
+    const errorInfo = {
+      shopifyOrderId: order.id,
+	  name: order.name,
+      shopDomain,
+      lsCustomerID,
+      timestamp: new Date().toISOString(),
+      errorMessage: err.message,
+      errorDetails: err.response?.data || err.stack || err.toString(),
+      lineItemsCount: order.line_items?.length || 0
+    };
     failedOrders.push(errorInfo);
     orderLogs.push({
       shopifyOrderId: order.id,
