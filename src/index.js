@@ -118,20 +118,26 @@ app.get("/dashboard", async (req, res) => {
     const itemType = typeof item;
     console.log(`[DASHBOARD] Item #${idx} type: ${itemType}`);
 
-    if (itemType !== 'string') {
-      console.error(`[DASHBOARD] Non-string item #${idx}:`, item);
-      return null;
+    if (itemType === 'object' && item !== null) {
+      // Already parsed by @upstash/redis
+      console.log(`[DASHBOARD] Using pre-parsed object #${idx} (ID: ${item.shopifyOrderId || 'unknown'})`);
+      return item;
     }
 
-    try {
-      const parsed = JSON.parse(item);
-      console.log(`[DASHBOARD] Parsed #${idx} OK - Order ID: ${parsed.shopifyOrderId || 'unknown'}`);
-      return parsed;
-    } catch (err) {
-      console.error(`[DASHBOARD] Parse fail #${idx}:`, err.message);
-      console.error("Raw item (first 500 chars):", item.substring(0, 500));
-      return null;
+    if (itemType === 'string') {
+      try {
+        const parsed = JSON.parse(item);
+        console.log(`[DASHBOARD] Parsed string item #${idx} OK`);
+        return parsed;
+      } catch (err) {
+        console.error(`[DASHBOARD] Parse fail on string #${idx}:`, err.message);
+        console.error("Raw string preview:", item.substring(0, 300));
+        return null;
+      }
     }
+
+    console.error(`[DASHBOARD] Unexpected item type #${idx}:`, itemType, item);
+    return null;
   })
   .filter(Boolean)
   .reverse();
