@@ -11,7 +11,16 @@ const {
 } = require("./services/lightspeed");
 const { Redis } = require('@upstash/redis');
 
-// Initialize Redis safely using your existing env vars
+// Safe JSON stringify that handles undefined, errors, etc.
+function safeStringify(obj) {
+  return JSON.stringify(obj, (key, value) => {
+    if (value === undefined) return null;
+    if (value instanceof Error) return { message: value.message, stack: value.stack };
+    return value;
+  }, 0);
+}
+
+// Initialize Redis
 let redis = null;
 if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
   console.error("CRITICAL: KV_REST_API_URL or KV_REST_API_TOKEN missing! Redis disabled.");
@@ -32,22 +41,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const processedOrders = new Set();
 
-// Persistent storage (in-memory cache - optional, dashboard loads fresh)
+// Persistent storage
 let orderLogs = [];
 let failedOrders = [];
 
-// Load from Redis on startup (optional)
 async function loadOrdersFromRedis() {
-  if (!redis) {
-    console.warn("Redis not initialized - skipping initial load");
-    return;
-  }
+  if (!redis) return console.warn("Redis not initialized - skipping load");
   try {
     const savedOrders = await redis.lrange('order_history', 0, -1) || [];
     orderLogs = savedOrders
       .map(item => {
         try { return JSON.parse(item); }
-        catch (e) { console.error("Corrupted order:", item); return null; }
+        catch (e) { console.error("Startup: Corrupted order:", item.substring(0, 200)); return null; }
       })
       .filter(Boolean)
       .reverse();
@@ -56,7 +61,7 @@ async function loadOrdersFromRedis() {
     failedOrders = savedFailed
       .map(item => {
         try { return JSON.parse(item); }
-        catch (e) { console.error("Corrupted failed order:", item); return null; }
+        catch (e) { console.error("Startup: Corrupted failed:", item.substring(0, 200)); return null; }
       })
       .filter(Boolean)
       .reverse();
@@ -73,32 +78,33 @@ loadOrdersFromRedis();
 app.set('view engine', 'ejs');
 app.set('views', path.join(process.cwd(), 'views'));
 
-// Dashboard - loads FRESH from Redis every request
+// Dashboard - fresh load + safe parsing
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
 
   if (!redis) {
-    console.warn("Redis unavailable - dashboard showing empty");
+    console.warn("Redis unavailable - dashboard empty");
   } else {
     try {
-      // Dynamic store name mapping
       const storeNameMap = {};
       for (const key in process.env) {
         if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
           const domainKey = key.replace('_NAME', '_DOMAIN');
           const domain = process.env[domainKey];
-          if (domain) {
-            storeNameMap[domain] = process.env[key];
-          }
+          if (domain) storeNameMap[domain] = process.env[key];
         }
       }
 
       const rawOrders = await redis.lrange('order_history', 0, -1) || [];
       const orders = rawOrders
-        .map(item => {
-          try { return JSON.parse(item); }
-          catch (err) { console.error("Corrupted order on dashboard load:", item); return null; }
+        .map((item, idx) => {
+          try {
+            return JSON.parse(item);
+          } catch (err) {
+            console.error(`Dashboard: Corrupted item #${idx}:`, item.substring(0, 300));
+            return null;
+          }
         })
         .filter(Boolean)
         .reverse();
