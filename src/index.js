@@ -109,23 +109,32 @@ app.get("/dashboard", async (req, res) => {
       console.log(`[DASHBOARD] Fetched ${rawOrders.length} raw items`);
 
       const orders = rawOrders
-        .map((item, idx) => {
-          if (typeof item !== 'string') {
-            console.error(`[DASHBOARD] Non-string item #${idx} (type ${typeof item}):`, item);
-            return null;
-          }
-          try {
-            const parsed = JSON.parse(item);
-            console.log(`[DASHBOARD] Parsed #${idx} OK (ID: ${parsed.shopifyOrderId || 'unknown'})`);
-            return parsed;
-          } catch (err) {
-            console.error(`[DASHBOARD] Parse fail on #${idx}:`, err.message);
-            console.error("Raw preview:", item.substring(0, 300));
-            return null;
-          }
-        })
-        .filter(Boolean)
-        .reverse();
+  .map((item, idx) => {
+    if (item === null || item === undefined) {
+      console.warn(`[DASHBOARD] Null item at #${idx}`);
+      return null;
+    }
+
+    const itemType = typeof item;
+    console.log(`[DASHBOARD] Item #${idx} type: ${itemType}`);
+
+    if (itemType !== 'string') {
+      console.error(`[DASHBOARD] Non-string item #${idx}:`, item);
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(item);
+      console.log(`[DASHBOARD] Parsed #${idx} OK - Order ID: ${parsed.shopifyOrderId || 'unknown'}`);
+      return parsed;
+    } catch (err) {
+      console.error(`[DASHBOARD] Parse fail #${idx}:`, err.message);
+      console.error("Raw item (first 500 chars):", item.substring(0, 500));
+      return null;
+    }
+  })
+  .filter(Boolean)
+  .reverse();
 
       enhancedOrders = orders.map(o => ({
         ...o,
