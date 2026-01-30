@@ -284,9 +284,13 @@ app.post("/webhooks/orders-create", async (req, res) => {
       saleLines: []
     };
     orderLogs.push(skipInfo);
-    await redis.lpush('order_history', JSON.stringify(skipInfo));
-    await redis.lpush('failed_queue', JSON.stringify(skipInfo));
-    return res.status(200).send("OK");
+if (redis) {
+  const stringified = safeStringify(skipInfo);
+  console.log("[WEBHOOK] Saving skip log:", stringified.substring(0, 200));
+  await redis.lpush('order_history', stringified);
+  await redis.lpush('failed_queue', stringified);
+}
+return res.status(200).send("OK");
   }
 
   try {
@@ -321,18 +325,21 @@ app.post("/webhooks/orders-create", async (req, res) => {
     console.log(`🎉 Sale created successfully for Shopify order #${order.id} from ${shopDomain}`);
 
     const successLog = {
-      shopifyOrderId: order.id,
-      shopDomain,
-      lsCustomerID,
-      timestamp: new Date().toISOString(),
-      status: "success",
-      products,
-      lsSaleID: saleResult.saleID || "unknown"
-    };
-    orderLogs.push(successLog);
-    await redis.lpush('order_history', JSON.stringify(successLog));
-
-    res.status(200).send("OK");
+  shopifyOrderId: order.id,
+  shopDomain,
+  lsCustomerID,
+  timestamp: new Date().toISOString(),
+  status: "success",
+  products,
+  lsSaleID: saleResult.saleID || "unknown"
+};
+orderLogs.push(successLog);
+if (redis) {
+  const stringified = safeStringify(successLog);
+  console.log("[WEBHOOK] Saving success log:", stringified.substring(0, 200));
+  await redis.lpush('order_history', stringified);
+}
+res.status(200).send("OK");
   } catch (err) {
     const errorInfo = {
       shopifyOrderId: order.id,
@@ -355,12 +362,14 @@ app.post("/webhooks/orders-create", async (req, res) => {
       errorDetails: err.response?.data || err.stack || err.toString()
     });
 
-    await redis.lpush('order_history', JSON.stringify(errorInfo));
-    await redis.lpush('failed_queue', JSON.stringify(errorInfo));
-
-    console.error(`❌ Order sync failed for #${order?.id || "unknown"} from ${shopDomain}`);
-    console.error("Failure details:", JSON.stringify(errorInfo, null, 2));
-    res.status(500).send("Internal Server Error");
+    if (redis) {
+  const stringified = safeStringify(errorInfo);
+  console.log("[WEBHOOK] Saving error log:", stringified.substring(0, 200));
+  await redis.lpush('order_history', stringified);
+  await redis.lpush('failed_queue', stringified);
+}
+console.error(`❌ Order sync failed...`);
+res.status(500).send("Internal Server Error");
   }
 });
 
