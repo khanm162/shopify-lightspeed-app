@@ -11,13 +11,14 @@ const {
 } = require("./services/lightspeed");
 const { Redis } = require('@upstash/redis');
 
-// Safe JSON stringify that handles undefined, errors, etc.
+// Safe stringify to handle undefined, errors, non-serializable values
 function safeStringify(obj) {
   return JSON.stringify(obj, (key, value) => {
     if (value === undefined) return null;
     if (value instanceof Error) return { message: value.message, stack: value.stack };
+    if (typeof value === 'bigint') return value.toString();
     return value;
-  }, 0);
+  }, 2); // pretty print for debug
 }
 
 // Initialize Redis
@@ -52,7 +53,7 @@ async function loadOrdersFromRedis() {
     orderLogs = savedOrders
       .map(item => {
         try { return JSON.parse(item); }
-        catch (e) { console.error("Startup: Corrupted order:", item.substring(0, 200)); return null; }
+        catch (e) { console.error("Startup corrupted:", item.substring(0, 200)); return null; }
       })
       .filter(Boolean)
       .reverse();
@@ -61,7 +62,7 @@ async function loadOrdersFromRedis() {
     failedOrders = savedFailed
       .map(item => {
         try { return JSON.parse(item); }
-        catch (e) { console.error("Startup: Corrupted failed:", item.substring(0, 200)); return null; }
+        catch (e) { console.error("Startup failed corrupted:", item.substring(0, 200)); return null; }
       })
       .filter(Boolean)
       .reverse();
@@ -78,7 +79,7 @@ loadOrdersFromRedis();
 app.set('view engine', 'ejs');
 app.set('views', path.join(process.cwd(), 'views'));
 
-// Dashboard - fresh load + safe parsing
+// Dashboard
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
@@ -97,12 +98,16 @@ app.get("/dashboard", async (req, res) => {
       }
 
       const rawOrders = await redis.lrange('order_history', 0, -1) || [];
+      console.log(`[DASHBOARD] Read ${rawOrders.length} raw items from Redis`);
+
       const orders = rawOrders
         .map((item, idx) => {
           try {
-            return JSON.parse(item);
+            const parsed = JSON.parse(item);
+            console.log(`[DASHBOARD] Successfully parsed item #${idx}`);
+            return parsed;
           } catch (err) {
-            console.error(`Dashboard: Corrupted item #${idx}:`, item.substring(0, 300));
+            console.error(`[DASHBOARD] Corrupted item #${idx}:`, item.substring(0, 300));
             return null;
           }
         })
@@ -117,6 +122,7 @@ app.get("/dashboard", async (req, res) => {
       }));
 
       total = enhancedOrders.length;
+      console.log(`[DASHBOARD] Final visible orders: ${total}`);
     } catch (err) {
       console.error("Dashboard load error:", err.message);
     }
@@ -127,6 +133,7 @@ app.get("/dashboard", async (req, res) => {
     orders: enhancedOrders
   });
 });
+
 
 // Token refresh (improved logging)
 app.get("/refresh-token", async (req, res) => {
