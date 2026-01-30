@@ -80,12 +80,13 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(process.cwd(), 'views'));
 
 // Dashboard
+// Dashboard - loads FRESH from Redis every request
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
 
   if (!redis) {
-    console.warn("Redis unavailable - dashboard empty");
+    console.warn("Redis unavailable - dashboard showing empty");
   } else {
     try {
       const storeNameMap = {};
@@ -100,25 +101,32 @@ app.get("/dashboard", async (req, res) => {
       }
 
       const rawOrders = await redis.lrange('order_history', 0, -1) || [];
-      console.log(`[DASHBOARD] Read ${rawOrders.length} raw items from Redis`);
+      console.log(`[DASHBOARD] Fetched ${rawOrders.length} raw items from Redis`);
 
       const orders = rawOrders
         .map((item, idx) => {
+          if (item === null || item === undefined) {
+            console.warn(`[DASHBOARD] Null/undefined item at index #${idx}`);
+            return null;
+          }
+
+          if (typeof item !== 'string') {
+            console.error(`[DASHBOARD] Non-string item at #${idx}:`, typeof item, item);
+            return null;
+          }
+
           try {
             const parsed = JSON.parse(item);
-            console.log(`[DASHBOARD] Parsed item #${idx} successfully`);
+            console.log(`[DASHBOARD] Successfully parsed item #${idx} (ID: ${parsed.shopifyOrderId || 'unknown'})`);
             return parsed;
           } catch (err) {
-            const itemPreview = typeof item === 'string' 
-              ? item.substring(0, 300) + (item.length > 300 ? '...' : '')
-              : `non-string (${typeof item})`;
-
-            console.error(`Dashboard: Corrupted item #${idx}:`, itemPreview, err.message);
+            console.error(`[DASHBOARD] JSON parse failed on item #${idx}:`, err.message);
+            console.error("Raw item preview:", item.substring(0, 300) + (item.length > 300 ? '...' : ''));
             return null;
           }
         })
-        .filter(Boolean)
-        .reverse();
+        .filter(item => item !== null)
+        .reverse(); // newest first
 
       enhancedOrders = orders.map(o => ({
         ...o,
@@ -128,9 +136,9 @@ app.get("/dashboard", async (req, res) => {
       }));
 
       total = enhancedOrders.length;
-      console.log(`[DASHBOARD] Final visible orders: ${total}`);
+      console.log(`[DASHBOARD] Final rendered orders: ${total}`);
     } catch (err) {
-      console.error("Dashboard overall load error:", err.message);
+      console.error("[DASHBOARD] Overall load error:", err.message, err.stack);
     }
   }
 
