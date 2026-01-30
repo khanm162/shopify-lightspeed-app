@@ -143,11 +143,11 @@ app.get("/dashboard", async (req, res) => {
   .reverse();
 
       enhancedOrders = orders.map(o => ({
-        ...o,
-        orderNumber: o.orderNumber || o.shopifyOrderId || '-',
-        storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
-        timestamp: o.timestamp || o.created_at || new Date().toISOString(),
-      }));
+  ...o,
+  orderNumber: o.name || o.shopifyOrderId || '-',
+  storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
+  timestamp: o.timestamp || o.created_at || new Date().toISOString(),
+}));
 
       total = enhancedOrders.length;
       console.log(`[DASHBOARD] Rendered ${total} orders`);

@@ -5,21 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Order Sync Dashboard</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <style>
     body {
-      font-family: -apple-system, BlinkMacOSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f8f9fa;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to bottom, #f0f4f8, #d9e2ec);
       margin: 0;
       padding: 20px;
       color: #333;
     }
-    h1 {
-      margin-top: 0;
-      color: #2c3e50;
-    }
     .container {
-      max-width: 1400px;
+      max-width: 1200px;
       margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      padding: 20px;
+    }
+    h1 {
+      color: #1a237e;
+      margin-top: 0;
     }
     .header {
       display: flex;
@@ -28,62 +33,106 @@
       margin-bottom: 20px;
     }
     .search-filter {
-      margin-bottom: 15px;
+      margin-bottom: 20px;
     }
     #search-input {
-      padding: 10px;
-      width: 300px;
-      font-size: 16px;
+      width: 100%;
+      padding: 12px;
       border: 1px solid #ccc;
-      border-radius: 4px;
+      border-radius: 8px;
+      font-size: 16px;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      background: white;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      border-radius: 8px;
-      overflow: hidden;
     }
     th, td {
-      padding: 12px 15px;
+      padding: 12px;
       text-align: left;
       border-bottom: 1px solid #eee;
     }
     th {
-      background: #34495e;
+      background: linear-gradient(to bottom, #3f51b5, #303f9f);
       color: white;
+      position: sticky;
+      top: 0;
+      z-index: 1;
       cursor: pointer;
-      user-select: none;
     }
-    th:hover { background: #2c3e50; }
-    tr:hover { background: #f1f5f9; }
-    .status-success { color: #27ae60; font-weight: bold; }
-    .status-failed, .status-skipped { color: #e74c3c; font-weight: bold; }
-    .products { font-size: 0.92em; line-height: 1.4; }
-    .error-msg { color: #c0392b; max-width: 300px; white-space: pre-wrap; }
+    th:hover {
+      background: linear-gradient(to bottom, #303f9f, #1a237e);
+    }
+    tr:hover {
+      background: #f8f9fa;
+    }
+    .status {
+      font-weight: bold;
+    }
+    .status-success { color: #2e7d32; }
+    .status-failed { color: #c62828; }
+    .status-skipped { color: #f57c00; }
+    .products {
+      font-size: 0.9em;
+      line-height: 1.5;
+    }
     button {
       padding: 6px 12px;
-      background: #e67e22;
+      background: #3f51b5;
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 0.9em;
     }
-    button:hover { background: #d35400; }
-    .empty { text-align: center; color: #777; padding: 40px; font-size: 1.1em; }
+    button:hover {
+      background: #303f9f;
+    }
+    .empty {
+      text-align: center;
+      color: #757575;
+      padding: 40px;
+      font-size: 1.2em;
+    }
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      table {
+        border: 0;
+      }
+      thead {
+        display: none;
+      }
+      tr {
+        display: block;
+        margin-bottom: 15px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 10px;
+      }
+      td {
+        display: block;
+        text-align: right;
+        position: relative;
+        padding-left: 50%;
+      }
+      td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 0;
+        width: 45%;
+        padding-left: 10px;
+        font-weight: bold;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
       <h1>Order Sync Dashboard</h1>
-      <div>Total Orders: <%= orders.length %></div>
+      <div>Total Orders: <%= totalOrders %></div>
     </div>
 
     <div class="search-filter">
-      <input type="text" id="search-input" placeholder="Filter by order #, store, status, date, error..." />
+      <input type="text" id="search-input" placeholder="Filter by order #, store, timestamp, status, product, error..." />
     </div>
 
     <% if (orders.length === 0) { %>
@@ -94,29 +143,29 @@
           <tr>
             <th data-sort="orderNumber">Order #</th>
             <th data-sort="storeName">Store Name</th>
-            <th data-sort="timestamp">Timestamp</th>
+            <th data-sort="timestamp">Timestamp (EST)</th>
             <th data-sort="status">Status</th>
-            <th>Products (Title + SKU × Qty)</th>
-            <th>Error Message</th>
-            <th>Action</th>
+            <th data-label="Products">Products (Title + SKU x Qty)</th>
+            <th data-label="Error">Error Message</th>
+            <th data-label="Action">Action</th>
           </tr>
         </thead>
         <tbody class="list">
           <% orders.forEach(o => { %>
             <tr>
-              <td class="orderNumber"><%= o.orderNumber || o.shopifyOrderId || '-' %></td>
-              <td class="storeName"><%= o.storeName || o.shopDomain || 'Unknown' %></td>
-              <td class="timestamp"><%= new Date(o.timestamp).toLocaleString() %></td>
-              <td class="status <%= o.status === 'success' ? 'status-success' : (o.status === 'failed' || o.status === 'skipped' ? 'status-failed' : '') %>">
-                <%= o.status.charAt(0).toUpperCase() + o.status.slice(1) %>
+              <td data-label="Order #" class="orderNumber"><%= o.orderNumber %></td>
+              <td data-label="Store Name" class="storeName"><%= o.storeName %></td>
+              <td data-label="Timestamp" class="timestamp"><%= new Date(o.timestamp).toLocaleString('en-US', { timeZone: 'America/New_York' }) %></td>
+              <td data-label="Status" class="status <%= o.status %>">
+                <i class="fas fa-<%= o.status === 'success' ? 'check-circle' : 'exclamation-circle' %>"></i> <%= o.status %>
               </td>
-              <td class="products">
+              <td data-label="Products" class="products">
                 <% (o.products || []).forEach(p => { %>
-                  <div><%= p.title || 'Unknown' %> (<%= p.sku %> × <%= p.quantity %>)</div>
+                  <div><%= p.title %> (<%= p.sku %> x <%= p.quantity %>)</div>
                 <% }); %>
               </td>
-              <td class="error-msg"><%= o.errorMessage || '-' %></td>
-              <td>
+              <td data-label="Error" class="error-msg"><%= o.errorMessage || '-' %></td>
+              <td data-label="Action">
                 <% if (o.status === 'failed' || o.status === 'skipped') { %>
                   <button onclick="resync('<%= o.shopifyOrderId %>')">Re-sync</button>
                 <% } %>
@@ -137,8 +186,9 @@
     };
     const userList = new List('orders-table', options);
 
-    // Make table headers clickable for sorting
+    // Sorting with icons
     document.querySelectorAll('th[data-sort]').forEach(th => {
+      th.innerHTML += ' <i class="fas fa-sort"></i>';
       th.addEventListener('click', () => {
         const sortBy = th.getAttribute('data-sort');
         const current = th.classList.contains('asc') ? 'desc' : 'asc';
@@ -149,16 +199,15 @@
     });
 
     async function resync(orderId) {
-      if (!confirm(`Re-sync Shopify order #${orderId}?`)) return;
+      if (!confirm(`Re-sync order #${orderId}?`)) return;
 
       try {
         const res = await fetch(`/resync/${orderId}`, { method: 'POST' });
-        const text = await res.text();
         if (res.ok) {
-          alert('Re-sync triggered successfully!');
+          alert('Re-sync successful!');
           location.reload();
         } else {
-          alert('Re-sync failed:\n' + text);
+          alert('Re-sync failed: ' + await res.text());
         }
       } catch (err) {
         alert('Error: ' + err.message);
