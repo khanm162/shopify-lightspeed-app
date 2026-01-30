@@ -16,6 +16,10 @@
     {
       "path": "/refresh-token",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/cron/retry-failed",
+      "schedule": "*/3 * * * *"
     }
   ]
 }

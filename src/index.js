@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const crypto = require("crypto");
+const path = require('path');
 const lightspeedAuth = require("./routes/lightspeedAuth");
 const {
   hasValidToken,
@@ -8,138 +9,165 @@ const {
   createSale,
   refreshAccessToken
 } = require("./services/lightspeed");
-
 const { Redis } = require('@upstash/redis');
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN,
-});
+
+// Initialize Redis safely using your existing env vars
+let redis = null;
+if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+  console.error("CRITICAL: KV_REST_API_URL or KV_REST_API_TOKEN missing! Redis disabled.");
+} else {
+  try {
+    redis = new Redis({
+      url: process.env.KV_REST_API_URL,
+      token: process.env.KV_REST_API_TOKEN,
+    });
+    console.log("Redis client initialized successfully");
+  } catch (err) {
+    console.error("Redis client creation failed:", err.message);
+    redis = null;
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const processedOrders = new Set();
 
-// Persistent storage: load from Redis on startup
+// Persistent storage (in-memory cache - optional, dashboard loads fresh)
 let orderLogs = [];
 let failedOrders = [];
 
+// Load from Redis on startup (optional)
 async function loadOrdersFromRedis() {
+  if (!redis) {
+    console.warn("Redis not initialized - skipping initial load");
+    return;
+  }
   try {
-    const savedOrders = await redis.lrange('order_history', 0, -1);
-    orderLogs = savedOrders.map(o => JSON.parse(o)).reverse();
+    const savedOrders = await redis.lrange('order_history', 0, -1) || [];
+    orderLogs = savedOrders
+      .map(item => {
+        try { return JSON.parse(item); }
+        catch (e) { console.error("Corrupted order:", item); return null; }
+      })
+      .filter(Boolean)
+      .reverse();
 
-    const savedFailed = await redis.lrange('failed_queue', 0, -1);
-    failedOrders = savedFailed.map(f => JSON.parse(f)).reverse();
+    const savedFailed = await redis.lrange('failed_queue', 0, -1) || [];
+    failedOrders = savedFailed
+      .map(item => {
+        try { return JSON.parse(item); }
+        catch (e) { console.error("Corrupted failed order:", item); return null; }
+      })
+      .filter(Boolean)
+      .reverse();
 
-    console.log(`Loaded ${orderLogs.length} orders and ${failedOrders.length} queued from Redis`);
+    console.log(`Startup load: ${orderLogs.length} orders, ${failedOrders.length} failed`);
   } catch (err) {
-    console.error("Failed to load orders from Redis:", err.message);
+    console.error("Startup Redis load failed:", err.message);
   }
 }
+
 loadOrdersFromRedis();
 
-// Set EJS as view engine
+// EJS setup
 app.set('view engine', 'ejs');
-app.set('views', __dirname + '/../views');
+app.set('views', path.join(process.cwd(), 'views'));
 
-// Dashboard
-app.get("/dashboard", (req, res) => {
-  try {
-    res.render('orders', {
-      totalOrders: orderLogs.length,
-      orders: orderLogs.map(o => ({
-        shopifyOrderId: o.shopifyOrderId,
-        shopDomain: o.shopDomain,
-        lsCustomerID: o.lsCustomerID,
-        timestamp: o.timestamp,
-        status: o.status,
-        products: o.products,
-        lsSaleID: o.lsSaleID,
-        errorMessage: o.errorMessage
-      }))
-    });
-  } catch (err) {
-    console.error("Dashboard render error:", err.message);
-    res.status(500).send("Dashboard error - check server logs");
+// Dashboard - loads FRESH from Redis every request
+app.get("/dashboard", async (req, res) => {
+  let enhancedOrders = [];
+  let total = 0;
+
+  if (!redis) {
+    console.warn("Redis unavailable - dashboard showing empty");
+  } else {
+    try {
+      // Dynamic store name mapping
+      const storeNameMap = {};
+      for (const key in process.env) {
+        if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
+          const domainKey = key.replace('_NAME', '_DOMAIN');
+          const domain = process.env[domainKey];
+          if (domain) {
+            storeNameMap[domain] = process.env[key];
+          }
+        }
+      }
+
+      const rawOrders = await redis.lrange('order_history', 0, -1) || [];
+      const orders = rawOrders
+        .map(item => {
+          try { return JSON.parse(item); }
+          catch (err) { console.error("Corrupted order on dashboard load:", item); return null; }
+        })
+        .filter(Boolean)
+        .reverse();
+
+      enhancedOrders = orders.map(o => ({
+        ...o,
+        orderNumber: o.orderNumber || o.shopifyOrderId || '-',
+        storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
+        timestamp: o.timestamp || o.created_at || new Date().toISOString(),
+      }));
+
+      total = enhancedOrders.length;
+    } catch (err) {
+      console.error("Dashboard load error:", err.message);
+    }
   }
-});
 
-// Other dashboard routes (unchanged)
-app.get("/dashboard/orders", (req, res) => {
-  res.json({
-    totalOrders: orderLogs.length,
-    orders: orderLogs
+  res.render('orders', {
+    totalOrders: total,
+    orders: enhancedOrders
   });
 });
 
-app.get("/dashboard/failed", (req, res) => {
-  res.json({
-    failedCount: failedOrders.length,
-    failedOrders: failedOrders
-  });
-});
-
-// Re-sync for failed orders (unchanged)
-app.post("/resync/:orderId", async (req, res) => {
-  const orderId = req.params.orderId;
-  const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
-  if (!failed) return res.status(404).json({ error: "Order not found in failed list" });
-
-  try {
-    console.log(`Manual re-sync for #${orderId} from ${failed.shopDomain}`);
-    const saleLines = failed.saleLines || [];
-    await createSale({
-      saleLines,
-      customerID: Number(failed.lsCustomerID)
-    });
-    failedOrders.splice(failedOrders.indexOf(failed), 1);
-    await redis.lrem('failed_queue', 0, JSON.stringify(failed));
-    const logEntry = orderLogs.find(o => o.shopifyOrderId === orderId);
-    if (logEntry) logEntry.status = "success (manual retry)";
-    await redis.lpush('order_history', JSON.stringify(logEntry));
-    res.json({ success: true, message: `Re-sync successful for order #${orderId}` });
-  } catch (err) {
-    console.error(`Re-sync failed for #${orderId}:`, err.message);
-    res.status(500).json({ error: "Re-sync failed", details: err.message });
-  }
-});
-
-// Token refresh (improved with logging + optional auth)
+// Token refresh (improved logging)
 app.get("/refresh-token", async (req, res) => {
-  // Optional: Add simple auth for security (use a secret from env)
-  const cronSecret = process.env.CRON_SECRET;  // add this in Vercel env, e.g. CRON_SECRET=your-random-secret
-  if (cronSecret && req.query.secret !== cronSecret) {
-    return res.status(403).send("Forbidden - invalid secret");
-  }
+  console.log(`[TOKEN-CRON] Refresh called at ${new Date().toISOString()}`);
 
   try {
-    if (!hasValidToken()) {
+    const isValid = hasValidToken();
+    console.log(`[TOKEN-CRON] Token valid? ${isValid}`);
+
+    if (!isValid) {
+      console.log("[TOKEN-CRON] Refreshing token...");
       await refreshAccessToken();
-      console.log("Token refreshed successfully via cron/ping");
+      console.log("[TOKEN-CRON] Refresh SUCCESS");
       res.send("Token refreshed successfully");
     } else {
-      console.log("Token is still valid - no refresh needed");
+      console.log("[TOKEN-CRON] Token still valid");
       res.send("Token still valid");
     }
   } catch (err) {
-    console.error("Token refresh failed:", err.message);
+    console.error("[TOKEN-CRON] REFRESH FAILED:", err.message);
     res.status(500).send("Refresh failed");
   }
 });
 
-// Auto-retry cron (unchanged)
+// Auto-retry failed orders (called by cron)
 app.get("/cron/retry-failed", async (req, res) => {
+  if (!redis) return res.status(503).send("Redis not available");
+
   try {
     const queued = await redis.lrange('failed_queue', 0, 9);
     if (queued.length === 0) return res.send("No queued orders to retry");
 
+    console.log(`[RETRY-CRON] Processing ${queued.length} queued failed orders`);
+
     for (const item of queued) {
-      const data = JSON.parse(item);
-      if (data.retryCount >= 5) {
-        console.log(`Max retries reached for #${data.shopifyOrderId}`);
+      let data;
+      try {
+        data = JSON.parse(item);
+      } catch (e) {
+        console.error("[RETRY-CRON] Corrupted queued item:", item);
         await redis.lrem('failed_queue', 1, item);
-        const log = orderLogs.find(o => o.shopifyOrderId === data.shopifyOrderId);
-        if (log) log.status = "permanent fail (max retries)";
+        continue;
+      }
+
+      if (data.retryCount >= 5) {
+        console.log(`[RETRY-CRON] Max retries for #${data.shopifyOrderId}`);
+        await redis.lrem('failed_queue', 1, item);
         continue;
       }
 
@@ -148,24 +176,19 @@ app.get("/cron/retry-failed", async (req, res) => {
           saleLines: data.saleLines,
           customerID: Number(data.lsCustomerID)
         });
-        console.log(`Auto-retry success for #${data.shopifyOrderId}`);
+        console.log(`[RETRY-CRON] Success for #${data.shopifyOrderId}`);
         await redis.lrem('failed_queue', 1, item);
         failedOrders = failedOrders.filter(f => f.shopifyOrderId !== data.shopifyOrderId);
-        const log = orderLogs.find(o => o.shopifyOrderId === data.shopifyOrderId);
-        if (log) log.status = "success (auto-retried)";
       } catch (retryErr) {
-        console.error(`Auto-retry failed for #${data.shopifyOrderId}:`, retryErr.message);
+        console.error(`[RETRY-CRON] Failed for #${data.shopifyOrderId}:`, retryErr.message);
         data.retryCount = (data.retryCount || 0) + 1;
         await redis.lrem('failed_queue', 1, item);
         await redis.lpush('failed_queue', JSON.stringify(data));
-        const log = orderLogs.find(o => o.shopifyOrderId === data.shopifyOrderId);
-        if (log) log.status = `retrying (${data.retryCount}/5)`;
       }
     }
-
     res.send(`Processed ${queued.length} queued retries`);
   } catch (err) {
-    console.error("Retry cron error:", err.message);
+    console.error("[RETRY-CRON] Error:", err.message);
     res.status(500).send("Retry failed");
   }
 });
