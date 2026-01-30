@@ -104,18 +104,25 @@ app.post("/resync/:orderId", async (req, res) => {
   }
 });
 
-// Token refresh (unchanged)
+// Token refresh (improved with logging + optional auth)
 app.get("/refresh-token", async (req, res) => {
+  // Optional: Add simple auth for security (use a secret from env)
+  const cronSecret = process.env.CRON_SECRET;  // add this in Vercel env, e.g. CRON_SECRET=your-random-secret
+  if (cronSecret && req.query.secret !== cronSecret) {
+    return res.status(403).send("Forbidden - invalid secret");
+  }
+
   try {
     if (!hasValidToken()) {
       await refreshAccessToken();
-      console.log("Token refreshed via cron");
+      console.log("Token refreshed successfully via cron/ping");
       res.send("Token refreshed successfully");
     } else {
+      console.log("Token is still valid - no refresh needed");
       res.send("Token still valid");
     }
   } catch (err) {
-    console.error("Cron refresh failed:", err.message);
+    console.error("Token refresh failed:", err.message);
     res.status(500).send("Refresh failed");
   }
 });
