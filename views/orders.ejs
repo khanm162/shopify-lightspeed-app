@@ -224,19 +224,29 @@
     });
 
     async function resync(orderId) {
-      if (!confirm(`Re-sync order #${orderId}?`)) return;
-      try {
-        const res = await fetch(`/resync/${orderId}`, { method: 'POST' });
-        if (res.ok) {
-          alert('Re-sync successful!');
-          location.reload();
-        } else {
-          alert('Re-sync failed: ' + await res.text());
-        }
-      } catch (err) {
-        alert('Error: ' + err.message);
+  if (!confirm(`Re-sync order #${orderId}?`)) return;
+
+  try {
+    const res = await fetch(`/resync/${orderId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
       }
+    });
+
+    const text = await res.text();
+    console.log('Re-sync response:', res.status, text); // log for debug
+
+    if (res.ok) {
+      alert('Re-sync successful!');
+      location.reload();
+    } else {
+      alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
     }
+  } catch (err) {
+    alert('Network error during re-sync: ' + err.message);
+  }
+}
   </script>
 </body>
 </html>

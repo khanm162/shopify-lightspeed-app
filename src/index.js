@@ -39,6 +39,11 @@ if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
 }
 
 const app = express();
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 const PORT = process.env.PORT || 3000;
 const processedOrders = new Set();
 
@@ -234,11 +239,6 @@ app.get("/cron/retry-failed", async (req, res) => {
   }
 });
 
-app.use(express.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf;
-  }
-}));
 
 app.get("/", (_, res) => res.send("Server running"));
 

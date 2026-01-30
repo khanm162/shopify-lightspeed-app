@@ -253,6 +253,7 @@ async function createSale({ saleLines, customerID }) {
 /* EXPORTS */
 module.exports = {
   exchangeCodeForToken,
+  refreshAccessToken,
   hasValidToken,
   getItemBySystemSku,
   createSale
