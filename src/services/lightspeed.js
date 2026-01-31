@@ -110,22 +110,33 @@ async function refreshAccessToken() {
 async function loadTokens() {
   if (redisAvailable) {
     const saved = await redis.get('lightspeed_tokens');
+    console.log("[TOKEN-LOAD] Raw saved value:", saved);
+
     if (saved) {
       try {
         const tokens = JSON.parse(saved);
-        if (tokens?.accessToken && tokens?.refreshToken) {
+        if (tokens && tokens.accessToken && tokens.refreshToken) {
           accessToken = tokens.accessToken;
           refreshToken = tokens.refreshToken;
-          console.log("Tokens loaded on startup");
+          console.log("[TOKEN-LOAD] Success: loaded valid tokens from Redis");
         } else {
-          console.warn("Invalid token data on startup - deleting");
+          console.warn("[TOKEN-LOAD] Invalid token structure - deleting key");
           await redis.del('lightspeed_tokens');
         }
       } catch (err) {
-        console.error("Startup token parse failed:", err.message);
+        console.error("[TOKEN-LOAD] Parse error:", err.message);
+        console.warn("[TOKEN-LOAD] Deleting corrupted key");
         await redis.del('lightspeed_tokens');
       }
+    } else {
+      console.warn("[TOKEN-LOAD] No tokens found in Redis");
     }
+  } else {
+    console.warn("Redis not available - cannot load tokens");
+  }
+
+  if (!accessToken || !refreshToken) {
+    console.warn("[TOKEN-LOAD] Tokens missing after load - re-auth required");
   }
 }
 

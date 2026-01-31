@@ -209,7 +209,6 @@ app.post("/resync/:orderId", async (req, res) => {
 // Token refresh (improved logging)
 app.get("/refresh-token", async (req, res) => {
   console.log(`[TOKEN-CRON] Refresh called at ${new Date().toISOString()}`);
-
   try {
     const isValid = hasValidToken();
     console.log(`[TOKEN-CRON] Token valid? ${isValid}`);
@@ -225,7 +224,7 @@ app.get("/refresh-token", async (req, res) => {
     }
   } catch (err) {
     console.error("[TOKEN-CRON] REFRESH FAILED:", err.message);
-    res.status(500).send("Refresh failed");
+    res.status(500).send("Refresh failed: " + err.message);
   }
 });
 
