@@ -22,7 +22,6 @@ try {
     })
     .catch(err => {
       console.error("❌ Redis ping failed:", err.message);
-      console.warn("Continuing without persistent tokens");
     });
 } catch (err) {
   console.error("❌ Redis init failed:", err.message);
@@ -34,6 +33,7 @@ let refreshToken = null;
 // ── OAUTH & Refresh ─────────────────────────────────────────────────────────────
 
 async function exchangeCodeForToken(code) {
+  console.log("[AUTH] Exchanging code for tokens...");
   const res = await axios.post(
     TOKEN_URL,
     new URLSearchParams({
@@ -49,98 +49,90 @@ async function exchangeCodeForToken(code) {
   accessToken = res.data.access_token;
   refreshToken = res.data.refresh_token;
 
-  if (redisAvailable) {
-    await redis.set('lightspeed_tokens', JSON.stringify({ accessToken, refreshToken }));
-    console.log("Tokens saved after exchange");
-  }
-
-  return accessToken;
-}
-
-async function refreshAccessToken() {
-  console.log("[REFRESH] Starting...");
-
-  if (!refreshToken && redisAvailable) {
-    const saved = await redis.get('lightspeed_tokens');
-    console.log("[REFRESH] Raw Redis value:", saved);
-
-    if (saved) {
-      try {
-        const tokens = JSON.parse(saved);
-        if (tokens?.accessToken && tokens?.refreshToken) {
-          accessToken = tokens.accessToken;
-          refreshToken = tokens.refreshToken;
-          console.log("[REFRESH] Tokens loaded OK");
-        } else {
-          console.warn("[REFRESH] Invalid structure - deleting key");
-          await redis.del('lightspeed_tokens');
-        }
-      } catch (err) {
-        console.error("[REFRESH] Parse failed:", err.message);
-        console.warn("[REFRESH] Deleting corrupted key");
-        await redis.del('lightspeed_tokens');
-      }
-    }
-  }
-
-  if (!refreshToken) throw new Error("No refresh token available");
-
-  const res = await axios.post(
-    TOKEN_URL,
-    new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: process.env.LIGHTSPEED_CLIENT_ID,
-      client_secret: process.env.LIGHTSPEED_CLIENT_SECRET
-    }).toString(),
-    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-  );
-
-  accessToken = res.data.access_token;
-  refreshToken = res.data.refresh_token || refreshToken;
+  console.log("[AUTH] New tokens received - accessToken length:", accessToken?.length || 0);
+  console.log("[AUTH] Refresh token length:", refreshToken?.length || 0);
 
   if (redisAvailable) {
     await redis.set('lightspeed_tokens', JSON.stringify({ accessToken, refreshToken }));
-    console.log("[REFRESH] Success - tokens saved");
+    console.log("✅ Tokens saved to Redis after auth");
+  } else {
+    console.warn("[AUTH] Redis not available - tokens only in memory");
   }
 
   return accessToken;
 }
 
 async function loadTokens() {
-  if (redisAvailable) {
-    const saved = await redis.get('lightspeed_tokens');
-    console.log("[TOKEN-LOAD] Raw saved value:", saved);
-
-    if (saved) {
-      try {
-        const tokens = JSON.parse(saved);
-        if (tokens && tokens.accessToken && tokens.refreshToken) {
-          accessToken = tokens.accessToken;
-          refreshToken = tokens.refreshToken;
-          console.log("[TOKEN-LOAD] Success: loaded valid tokens from Redis");
-        } else {
-          console.warn("[TOKEN-LOAD] Invalid token structure - deleting key");
-          await redis.del('lightspeed_tokens');
-        }
-      } catch (err) {
-        console.error("[TOKEN-LOAD] Parse error:", err.message);
-        console.warn("[TOKEN-LOAD] Deleting corrupted key");
-        await redis.del('lightspeed_tokens');
-      }
-    } else {
-      console.warn("[TOKEN-LOAD] No tokens found in Redis");
-    }
-  } else {
-    console.warn("Redis not available - cannot load tokens");
+  if (!redisAvailable) {
+    console.warn("[LOAD] Redis not available - cannot load tokens");
+    return;
   }
 
-  if (!accessToken || !refreshToken) {
-    console.warn("[TOKEN-LOAD] Tokens missing after load - re-auth required");
+  const saved = await redis.get('lightspeed_tokens');
+  console.log("[LOAD] Raw Redis value for lightspeed_tokens:", saved || "null/empty");
+
+  if (saved) {
+    try {
+      const tokens = JSON.parse(saved);
+      if (tokens?.accessToken && tokens?.refreshToken) {
+        accessToken = tokens.accessToken;
+        refreshToken = tokens.refreshToken;
+        console.log("[LOAD] Success - tokens loaded from Redis");
+        console.log("[LOAD] Access token length:", accessToken.length);
+        console.log("[LOAD] Refresh token length:", refreshToken.length);
+      } else {
+        console.warn("[LOAD] Invalid tokens - deleting key");
+        await redis.del('lightspeed_tokens');
+      }
+    } catch (err) {
+      console.error("[LOAD] Parse error:", err.message);
+      console.warn("[LOAD] Deleting corrupted key");
+      await redis.del('lightspeed_tokens');
+    }
+  } else {
+    console.warn("[LOAD] No tokens in Redis - re-auth required");
   }
 }
 
-loadTokens(); // Run on startup
+async function refreshAccessToken() {
+  console.log("[REFRESH] Starting... Current refreshToken length:", refreshToken?.length || "missing");
+
+  if (!refreshToken) {
+    await loadTokens();
+    console.log("[REFRESH] After load - refreshToken length:", refreshToken?.length || "still missing");
+    if (!refreshToken) {
+      throw new Error("No refresh token available - re-authenticate required");
+    }
+  }
+
+  try {
+    const res = await axios.post(
+      TOKEN_URL,
+      new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: process.env.LIGHTSPEED_CLIENT_ID,
+        client_secret: process.env.LIGHTSPEED_CLIENT_SECRET
+      }).toString(),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+
+    accessToken = res.data.access_token;
+    refreshToken = res.data.refresh_token || refreshToken;
+
+    if (redisAvailable) {
+      await redis.set('lightspeed_tokens', JSON.stringify({ accessToken, refreshToken }));
+      console.log("[REFRESH] Success - new tokens saved to Redis");
+    }
+
+    return accessToken;
+  } catch (err) {
+    console.error("[REFRESH] API call failed:", err.message);
+    throw err;
+  }
+}
+
+loadTokens(); // Load on startup
 
 function authHeader() {
   if (!accessToken) throw new Error("Lightspeed token missing");
