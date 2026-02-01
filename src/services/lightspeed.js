@@ -33,7 +33,7 @@ let refreshToken = null;
 // ── OAUTH & Refresh ─────────────────────────────────────────────────────────────
 
 async function exchangeCodeForToken(code) {
-  console.log("[AUTH] Exchanging code for tokens...");
+  console.log("[AUTH] Starting exchange with code:", code.substring(0, 10) + "...");
   const res = await axios.post(
     TOKEN_URL,
     new URLSearchParams({
@@ -49,19 +49,22 @@ async function exchangeCodeForToken(code) {
   accessToken = res.data.access_token;
   refreshToken = res.data.refresh_token;
 
-  console.log("[AUTH] New tokens received - accessToken length:", accessToken?.length || 0);
-  console.log("[AUTH] Refresh token length:", refreshToken?.length || 0);
+  console.log("[AUTH] Tokens received - access:", accessToken.substring(0, 20) + "...");
+  console.log("[AUTH] Refresh token length:", refreshToken?.length || "MISSING!");
 
   if (redisAvailable) {
-    await redis.set('lightspeed_tokens', JSON.stringify({ accessToken, refreshToken }));
-    console.log("✅ Tokens saved to Redis after auth");
+    const payload = JSON.stringify({ accessToken, refreshToken });
+    await redis.set('lightspeed_tokens', payload);
+    console.log("[AUTH] Saved to Redis - payload length:", payload.length);
+    // Verify save
+    const verify = await redis.get('lightspeed_tokens');
+    console.log("[AUTH] Verification read back:", verify ? "OK" : "FAILED");
   } else {
-    console.warn("[AUTH] Redis not available - tokens only in memory");
+    console.warn("[AUTH] Redis unavailable - tokens only in memory");
   }
 
   return accessToken;
 }
-
 async function loadTokens() {
   if (!redisAvailable) {
     console.warn("[LOAD] Redis not available - cannot load tokens");
