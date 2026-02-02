@@ -23,7 +23,6 @@
       background: white;
       border-radius: 6px;
       box-shadow: 0 1px 6px rgba(0,0,0,0.1);
-      overflow: hidden;
     }
     .header {
       background: #000;
@@ -61,24 +60,6 @@
       border: 1px solid #ddd;
       border-radius: 4px;
       font-size: 12px;
-      box-sizing: border-box;
-    }
-    #search-input:focus {
-      border-color: #000;
-      outline: none;
-    }
-    .search-icon {
-      position: absolute;
-      left: 8px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #777;
-      font-size: 12px;
-    }
-    .date-range {
-      display: flex;
-      gap: 8px;
-      align-items: center;
     }
     .date-input {
       padding: 6px;
@@ -96,9 +77,6 @@
       cursor: pointer;
       font-size: 12px;
     }
-    .clear-btn:hover {
-      background: #222;
-    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -106,7 +84,6 @@
     }
     th, td {
       padding: 3px 5px;
-      text-align: left;
       border-bottom: 1px solid #eee;
       vertical-align: middle;
     }
@@ -125,22 +102,17 @@
     tr:hover {
       background: #f5f5f5;
     }
-    .status {
-      font-weight: 600;
-    }
-    .status-success { color: #006400; }
-    .status-failed { color: #8B0000; }
-    .status-skipped { color: #8B4513; }
+    .status-success { color: #006400; font-weight: bold; }
+    .status-failed { color: #8B0000; font-weight: bold; }
+    .status-skipped { color: #8B4513; font-weight: bold; }
     .products {
       line-height: 1.1;
       white-space: pre-wrap;
-      font-size: 11px;
     }
     .error-msg {
       color: #8B0000;
       max-width: 200px;
       word-break: break-word;
-      font-size: 11px;
     }
     .action-btn {
       padding: 3px 6px;
@@ -150,22 +122,6 @@
       border-radius: 3px;
       cursor: pointer;
       font-size: 10px;
-    }
-    .action-btn:hover {
-      background: #222;
-    }
-    .empty {
-      text-align: center;
-      padding: 30px;
-      color: #555;
-    }
-    @media (max-width: 992px) {
-      table { min-width: 800px; }
-      .filters { flex-direction: column; gap: 8px; }
-    }
-    @media (max-width: 768px) {
-      th, td { font-size: 10px; padding: 3px 4px; }
-      .date-range { flex-direction: column; }
     }
   </style>
 </head>
@@ -208,17 +164,8 @@
             <tr>
               <td class="orderNumber"><%= o.name || o.orderNumber || o.shopifyOrderId || '-' %></td>
               <td class="storeName"><%= o.storeName || o.shopDomain || 'Unknown' %></td>
-              <td class="timestamp">
-                <%= new Date(o.timestamp).toLocaleString('en-US', { 
-                  timeZone: 'America/New_York',
-                  month: 'numeric', day: 'numeric', year: 'numeric',
-                  hour: 'numeric', minute: '2-digit', hour12: true 
-                }) %>
-              </td>
-              <td class="status <%= o.status %>">
-                <i class="fas fa-<%= o.status === 'success' ? 'check-circle' : 'exclamation-circle' %>"></i>
-                <%= o.status %>
-              </td>
+              <td class="timestamp"><%= new Date(o.timestamp).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) %></td>
+              <td class="status"><%= o.status %></td>
               <td class="products">
                 <% (o.products || []).forEach(p => { %>
                   <div><%= p.title %> (<%= p.sku %> × <%= p.quantity %>)</div>
@@ -237,120 +184,116 @@
     <% } %>
   </div>
 
-<script>
-  console.log("Dashboard script loaded successfully");
+  <script>
+    console.log("Dashboard script loaded successfully");
 
-  // List.js setup - NO custom sort function needed for timestamp (use native)
-  const options = {
-    valueNames: [
-      'orderNumber',
-      'storeName',
-      'timestamp',          // List.js will treat as string, but we parse in filter
-      'status',
-      'products',
-      'error-msg'
-    ],
-    searchClass: 'search',
-    sortClass: 'sort'
-  };
+    const options = {
+      valueNames: [
+        'orderNumber',
+        'storeName',
+        'timestamp',
+        'status',
+        'products',
+        'error-msg'
+      ],
+      searchClass: 'search',
+      sortClass: 'sort'
+    };
 
-  console.log("Initializing List.js...");
-  const userList = new List('orders-table', options);
-  console.log("List.js initialized:", !!userList);
+    console.log("Initializing List.js...");
+    const userList = new List('orders-table', options);
+    console.log("List.js initialized");
 
-  // Default sort: newest first (descending timestamp)
-  userList.sort('timestamp', { order: 'desc' });
-  console.log("Default newest-first sort applied");
+    // Default sort: newest first
+    userList.sort('timestamp', { order: 'desc' });
+    console.log("Default sort applied");
 
-  // Update total on changes
-  const totalDisplay = document.getElementById('total-display');
-  const originalTotal = <%= totalOrders %>;
+    // Update total
+    const totalDisplay = document.getElementById('total-display');
+    const originalTotal = <%= totalOrders %>;
 
-  function updateTotal() {
-    const visibleCount = userList.visibleItems.length;
-    totalDisplay.textContent = `Total Orders: ${visibleCount} (of ${originalTotal})`;
-  }
-
-  userList.on('updated', updateTotal);
-  userList.on('searchComplete', updateTotal);
-  userList.on('sortComplete', updateTotal);
-
-  updateTotal();
-
-  // Live search
-  document.getElementById('search-input').addEventListener('input', function() {
-    userList.search(this.value);
-  });
-
-  // Date range filter - safe parsing + inclusive end date
-  flatpickr("#from-date", { dateFormat: "m/d/Y" });
-  flatpickr("#to-date", { dateFormat: "m/d/Y" });
-
-  const fromInput = document.getElementById('from-date');
-  const toInput = document.getElementById('to-date');
-
-  function applyDateFilter() {
-    console.log("Date filter applied - From:", fromInput.value, "To:", toInput.value);
-
-    const fromStr = fromInput.value.trim();
-    const toStr = toInput.value.trim();
-
-    let from = fromStr ? new Date(fromStr) : null;
-    let to = toStr ? new Date(toStr) : null;
-
-    if (from) from.setHours(0, 0, 0, 0);
-    if (to) to.setHours(23, 59, 59, 999);
-
-    userList.filter(function(item) {
-      const tsStr = item.values().timestamp || '';
-      if (!tsStr) return true; // skip invalid rows
-
-      const ts = new Date(tsStr);
-      if (isNaN(ts.getTime())) return true; // invalid date → show
-
-      if (from && ts < from) return false;
-      if (to && ts > to) return false;
-      return true;
-    });
-  }
-
-  fromInput.addEventListener('change', applyDateFilter);
-  toInput.addEventListener('change', applyDateFilter);
-
-  // Clear Filters
-  document.getElementById('clear-filters').addEventListener('click', function() {
-    console.log("Clear Filters clicked");
-    document.getElementById('search-input').value = '';
-    userList.search('');
-
-    fromInput.value = '';
-    toInput.value = '';
-
-    userList.filter(() => true);
-    userList.sort('timestamp', { order: 'desc' }); // Reset to newest first
-    updateTotal();
-  });
-
-  async function resync(orderId) {
-    if (!confirm(`Re-sync order #${orderId}?`)) return;
-    try {
-      const res = await fetch(`/resync/${orderId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const text = await res.text();
-      if (res.ok) {
-        alert('Re-sync successful!');
-        location.reload();
-      } else {
-        alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
-      }
-    } catch (err) {
-      alert('Network error: ' + err.message);
+    function updateTotal() {
+      const visibleCount = userList.visibleItems.length;
+      totalDisplay.textContent = `Total Orders: ${visibleCount} (of ${originalTotal})`;
     }
-  }
 
-  console.log("All event listeners attached");
-</script>
-</body>
-</html>
+    userList.on('updated', updateTotal);
+    userList.on('searchComplete', updateTotal);
+    userList.on('sortComplete', updateTotal);
+
+    updateTotal();
+
+    // Live search
+    document.getElementById('search-input').addEventListener('input', function() {
+      userList.search(this.value);
+    });
+
+    // Date range filter - safe & accurate
+    flatpickr("#from-date", { dateFormat: "m/d/Y" });
+    flatpickr("#to-date", { dateFormat: "m/d/Y" });
+
+    const fromInput = document.getElementById('from-date');
+    const toInput = document.getElementById('to-date');
+
+    function applyDateFilter() {
+      console.log("Date filter applied - From:", fromInput.value, "To:", toInput.value);
+
+      const fromStr = fromInput.value.trim();
+      const toStr = toInput.value.trim();
+
+      let from = fromStr ? new Date(fromStr) : null;
+      let to = toStr ? new Date(toStr) : null;
+
+      if (from) from.setHours(0, 0, 0, 0);
+      if (to) to.setHours(23, 59, 59, 999);
+
+      userList.filter(function(item) {
+        const tsStr = (item.values().timestamp || '').trim();
+        if (!tsStr) return true; // skip invalid
+
+        const ts = new Date(tsStr);
+        if (isNaN(ts.getTime())) return true;
+
+        if (from && ts < from) return false;
+        if (to && ts > to) return false;
+        return true;
+      });
+    }
+
+    fromInput.addEventListener('change', applyDateFilter);
+    toInput.addEventListener('change', applyDateFilter);
+
+    // Clear Filters
+    document.getElementById('clear-filters').addEventListener('click', function() {
+      document.getElementById('search-input').value = '';
+      userList.search('');
+
+      fromInput.value = '';
+      toInput.value = '';
+
+      userList.filter(() => true);
+      userList.sort('timestamp', { order: 'desc' });
+      updateTotal();
+    });
+
+    async function resync(orderId) {
+      if (!confirm(`Re-sync order #${orderId}?`)) return;
+      try {
+        const res = await fetch(`/resync/${orderId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const text = await res.text();
+        if (res.ok) {
+          alert('Re-sync successful!');
+          location.reload();
+        } else {
+          alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
+        }
+      } catch (err) {
+        alert('Network error: ' + err.message);
+      }
+    }
+
+    console.log("All event listeners attached");
+  </script>
