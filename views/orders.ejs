@@ -240,19 +240,12 @@
 <script>
   console.log("Dashboard script loaded successfully");
 
-  // List.js setup with custom date parser
+  // List.js setup - NO custom sort function needed for timestamp (use native)
   const options = {
     valueNames: [
       'orderNumber',
       'storeName',
-      {
-        name: 'timestamp',
-        sort: function(a, b) {
-          const dateA = new Date(a.innerText.trim());
-          const dateB = new Date(b.innerText.trim());
-          return dateA - dateB; // asc by default, List.js handles toggle
-        }
-      },
+      'timestamp',          // List.js will treat as string, but we parse in filter
       'status',
       'products',
       'error-msg'
@@ -263,14 +256,13 @@
 
   console.log("Initializing List.js...");
   const userList = new List('orders-table', options);
-  console.log("List.js initialized:", userList);
+  console.log("List.js initialized:", !!userList);
 
-  // Default: newest on top (descending timestamp)
-  console.log("Applying default sort (timestamp desc)...");
+  // Default sort: newest first (descending timestamp)
   userList.sort('timestamp', { order: 'desc' });
-  console.log("Default sort applied");
+  console.log("Default newest-first sort applied");
 
-  // Update total count on every change
+  // Update total on changes
   const totalDisplay = document.getElementById('total-display');
   const originalTotal = <%= totalOrders %>;
 
@@ -287,11 +279,10 @@
 
   // Live search
   document.getElementById('search-input').addEventListener('input', function() {
-    console.log("Search input:", this.value);
     userList.search(this.value);
   });
 
-  // Date range filter (inclusive end date)
+  // Date range filter - safe parsing + inclusive end date
   flatpickr("#from-date", { dateFormat: "m/d/Y" });
   flatpickr("#to-date", { dateFormat: "m/d/Y" });
 
@@ -304,12 +295,19 @@
     const fromStr = fromInput.value.trim();
     const toStr = toInput.value.trim();
 
-    let from = fromStr ? new Date(fromStr + " 00:00:00") : null;
-    let to = toStr ? new Date(toStr + " 23:59:59") : null;
+    let from = fromStr ? new Date(fromStr) : null;
+    let to = toStr ? new Date(toStr) : null;
+
+    if (from) from.setHours(0, 0, 0, 0);
+    if (to) to.setHours(23, 59, 59, 999);
 
     userList.filter(function(item) {
-      const tsStr = item.values().timestamp.trim();
+      const tsStr = item.values().timestamp || '';
+      if (!tsStr) return true; // skip invalid rows
+
       const ts = new Date(tsStr);
+      if (isNaN(ts.getTime())) return true; // invalid date → show
+
       if (from && ts < from) return false;
       if (to && ts > to) return false;
       return true;
