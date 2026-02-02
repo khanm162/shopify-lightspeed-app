@@ -149,36 +149,64 @@ app.get("/dashboard", async (req, res) => {
 // Re-sync failed/skipped order (POST)
 app.post("/resync/:orderId", async (req, res) => {
   console.log(`[RESYNC] POST request received for orderId: ${req.params.orderId}`);
-  const orderId = req.params.orderId;
-  const failed = failedOrders.find(f => f.shopifyOrderId === orderId);
-  if (!failed) {
-    console.log("[RESYNC] Order not found in failedOrders");
-    return res.status(404).json({ error: "Order not found in failed list" });
-  }
+
+  if (!redis) return res.status(500).json({ error: "Redis not available" });
+
   try {
-    console.log(`[RESYNC] Manual re-sync for #${orderId} from ${failed.shopDomain}`);
-    const saleLines = failed.saleLines || [];
+    const orderId = req.params.orderId;
+
+    // Load all failed items from Redis (instead of memory)
+    const queued = await redis.lrange('failed_queue', 0, -1) || [];
+    let failedItem = null;
+
+    for (const item of queued) {
+      try {
+        const parsed = JSON.parse(item);
+        if (parsed.shopifyOrderId === orderId) {
+          failedItem = parsed;
+          break;
+        }
+      } catch (e) {
+        console.error("[RESYNC] Skipping corrupted item in queue:", item.substring(0, 200));
+        await redis.lrem('failed_queue', 1, item); // auto-remove bad items
+      }
+    }
+
+    if (!failedItem) {
+      console.log("[RESYNC] Order not found in Redis failed_queue");
+      return res.status(404).json({ error: "Order not found in failed list" });
+    }
+
+    console.log(`[RESYNC] Found failed item in Redis: #${orderId} from ${failedItem.shopDomain}`);
+
+    const saleLines = failedItem.saleLines || [];
     await createSale({
       saleLines,
-      customerID: Number(failed.lsCustomerID)
+      customerID: Number(failedItem.lsCustomerID)
     });
-    // Remove from memory
-    failedOrders.splice(failedOrders.indexOf(failed), 1);
-    // Remove from Redis
-    if (redis) {
-      await redis.lrem('failed_queue', 0, JSON.stringify(failed));
-      console.log("[RESYNC] Removed from failed_queue");
+
+    // Remove from Redis queue
+    await redis.lrem('failed_queue', 0, JSON.stringify(failedItem));
+    console.log("[RESYNC] Removed from failed_queue");
+
+    // Optional: Update order_history status
+    const historyItems = await redis.lrange('order_history', 0, -1) || [];
+    for (const hist of historyItems) {
+      try {
+        const parsed = JSON.parse(hist);
+        if (parsed.shopifyOrderId === orderId) {
+          parsed.status = "success (manual retry)";
+          await redis.lrem('order_history', 0, hist);
+          await redis.lpush('order_history', JSON.stringify(parsed));
+          console.log("[RESYNC] Updated status in order_history");
+          break;
+        }
+      } catch (e) {}
     }
-    // Update log in memory & Redis
-    const logEntry = orderLogs.find(o => o.shopifyOrderId === orderId);
-    if (logEntry) {
-      logEntry.status = "success (manual retry)";
-      if (redis) await redis.lpush('order_history', JSON.stringify(logEntry));
-      console.log("[RESYNC] Updated logEntry status");
-    }
+
     res.json({ success: true, message: `Re-sync successful for order #${orderId}` });
   } catch (err) {
-    console.error(`[RESYNC] Failed for #${orderId}:`, err.message);
+    console.error(`[RESYNC] Failed for #${req.params.orderId}:`, err.message);
     res.status(500).json({ error: "Re-sync failed", details: err.message });
   }
 });
@@ -209,20 +237,23 @@ app.get("/cron/retry-failed", async (req, res) => {
     const queued = await redis.lrange('failed_queue', 0, 9);
     if (queued.length === 0) return res.send("No queued orders to retry");
     console.log(`[RETRY-CRON] Processing ${queued.length} queued failed orders`);
+
     for (const item of queued) {
       let data;
       try {
         data = JSON.parse(item);
       } catch (e) {
-        console.error("[RETRY-CRON] Corrupted queued item:", item);
-        await redis.lrem('failed_queue', 1, item);
+        console.error("[RETRY-CRON] Corrupted queued item:", item.substring(0, 300));
+        await redis.lrem('failed_queue', 1, item); // Auto-remove bad item
         continue;
       }
+
       if (data.retryCount >= 5) {
-        console.log(`[RETRY-CRON] Max retries for #${data.shopifyOrderId}`);
+        console.log(`[RETRY-CRON] Max retries reached for #${data.shopifyOrderId}`);
         await redis.lrem('failed_queue', 1, item);
         continue;
       }
+
       try {
         await createSale({
           saleLines: data.saleLines,
