@@ -238,104 +238,113 @@
   </div>
 
   <script>
-    // List.js setup
-    const options = {
-      valueNames: [
-        'orderNumber',
-        'storeName',
-        'timestamp',
-        'status',
-        'products',
-        'error-msg'
-      ],
-      searchClass: 'search',
-      sortClass: 'sort'
-    };
-    const userList = new List('orders-table', options);
-
-    // Default: newest orders on top (descending timestamp)
-    userList.sort('timestamp', { order: 'desc' });
-
-    // Update total count on filter/search/sort
-    const totalDisplay = document.getElementById('total-display');
-    const originalTotal = <%= totalOrders %>;
-
-    function updateTotal() {
-      const visibleCount = userList.visibleItems.length;
-      totalDisplay.textContent = `Total Orders: ${visibleCount} (of ${originalTotal})`;
-    }
-
-    userList.on('updated', updateTotal);
-    userList.on('searchComplete', updateTotal);
-    userList.on('sortComplete', updateTotal);
-
-    updateTotal();
-
-    // Live search
-    document.getElementById('search-input').addEventListener('input', function() {
-      userList.search(this.value);
-    });
-
-    // Date range filter
-    flatpickr("#from-date", { dateFormat: "m/d/Y" });
-    flatpickr("#to-date", { dateFormat: "m/d/Y" });
-
-    const fromInput = document.getElementById('from-date');
-    const toInput = document.getElementById('to-date');
-
-    function applyDateFilter() {
-      const fromStr = fromInput.value.trim();
-      const toStr = toInput.value.trim();
-
-      let from = fromStr ? new Date(fromStr) : null;
-      let to = toStr ? new Date(toStr) : null;
-
-      if (from) from.setHours(0, 0, 0, 0);
-      if (to) to.setHours(23, 59, 59, 999);
-
-      userList.filter(function(item) {
-        const tsStr = item.values().timestamp;
-        const ts = new Date(tsStr);
-        if (from && ts < from) return false;
-        if (to && ts > to) return false;
-        return true;
-      });
-    }
-
-    fromInput.addEventListener('change', applyDateFilter);
-    toInput.addEventListener('change', applyDateFilter);
-
-    // Clear Filters
-    document.getElementById('clear-filters').addEventListener('click', function() {
-      document.getElementById('search-input').value = '';
-      userList.search('');
-
-      fromInput.value = '';
-      toInput.value = '';
-
-      userList.filter(() => true);
-      userList.sort('timestamp', { order: 'desc' }); // Reset to newest first
-      updateTotal();
-    });
-
-    async function resync(orderId) {
-      if (!confirm(`Re-sync order #${orderId}?`)) return;
-      try {
-        const res = await fetch(`/resync/${orderId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        const text = await res.text();
-        if (res.ok) {
-          alert('Re-sync successful!');
-          location.reload();
-        } else {
-          alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
+  // List.js setup with date parsing
+  const options = {
+    valueNames: [
+      'orderNumber',
+      'storeName',
+      {
+        name: 'timestamp',
+        sort: function(a, b) {
+          // Custom date parser for correct sorting
+          const dateA = new Date(a.innerText.trim());
+          const dateB = new Date(b.innerText.trim());
+          return dateA - dateB; // ascending by default
         }
-      } catch (err) {
-        alert('Network error: ' + err.message);
+      },
+      'status',
+      'products',
+      'error-msg'
+    ],
+    searchClass: 'search',
+    sortClass: 'sort'
+  };
+
+  const userList = new List('orders-table', options);
+
+  // Default: newest orders on top (descending timestamp)
+  userList.sort('timestamp', { order: 'desc' });
+
+  // Update total count on every change
+  const totalDisplay = document.getElementById('total-display');
+  const originalTotal = <%= totalOrders %>;
+
+  function updateTotal() {
+    const visibleCount = userList.visibleItems.length;
+    totalDisplay.textContent = `Total Orders: ${visibleCount} (of ${originalTotal})`;
+  }
+
+  userList.on('updated', updateTotal);
+  userList.on('searchComplete', updateTotal);
+  userList.on('sortComplete', updateTotal);
+
+  updateTotal();
+
+  // Live search
+  document.getElementById('search-input').addEventListener('input', function() {
+    userList.search(this.value);
+  });
+
+  // Date range filter (unchanged)
+  flatpickr("#from-date", { dateFormat: "m/d/Y" });
+  flatpickr("#to-date", { dateFormat: "m/d/Y" });
+
+  const fromInput = document.getElementById('from-date');
+  const toInput = document.getElementById('to-date');
+
+  function applyDateFilter() {
+    const fromStr = fromInput.value.trim();
+    const toStr = toInput.value.trim();
+
+    let from = fromStr ? new Date(fromStr) : null;
+    let to = toStr ? new Date(toStr) : null;
+
+    if (from) from.setHours(0, 0, 0, 0);
+    if (to) to.setHours(23, 59, 59, 999);
+
+    userList.filter(function(item) {
+      const tsStr = item.values().timestamp;
+      const ts = new Date(tsStr);
+      if (from && ts < from) return false;
+      if (to && ts > to) return false;
+      return true;
+    });
+  }
+
+  fromInput.addEventListener('change', applyDateFilter);
+  toInput.addEventListener('change', applyDateFilter);
+
+  // Clear Filters
+  document.getElementById('clear-filters').addEventListener('click', function() {
+    document.getElementById('search-input').value = '';
+    userList.search('');
+
+    fromInput.value = '';
+    toInput.value = '';
+
+    userList.filter(() => true);
+    userList.sort('timestamp', { order: 'desc' }); // Reset to newest first
+    updateTotal();
+  });
+
+  async function resync(orderId) {
+    if (!confirm(`Re-sync order #${orderId}?`)) return;
+    try {
+      const res = await fetch(`/resync/${orderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const text = await res.text();
+      if (res.ok) {
+        alert('Re-sync successful!');
+        location.reload();
+      } else {
+        alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
       }
+    } catch (err) {
+      alert('Network error: ' + err.message);
     }
-  </script>
+  }
+</script>
 </body>
 </html>
