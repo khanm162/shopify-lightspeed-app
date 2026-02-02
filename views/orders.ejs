@@ -6,13 +6,15 @@
   <title>Order Sync Dashboard</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <style>
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
       background: #f9f9f9;
       margin: 0;
       padding: 15px;
-      color: #1a1a1a;
+      color: #000;
       font-size: 13px;
       line-height: 1.3;
     }
@@ -21,141 +23,137 @@
       margin: 0 auto;
       background: white;
       border-radius: 8px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-      overflow: visible; /* Changed to visible for sticky header */
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      overflow: hidden;
     }
     .header {
       background: #000;
       color: white;
-      padding: 12px 20px;
+      padding: 10px 15px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-weight: 600;
     }
     h1 {
       margin: 0;
-      font-size: 1.3rem;
+      font-size: 1.2rem;
+      font-weight: 600;
     }
     .total {
       font-size: 0.95rem;
-      opacity: 0.9;
     }
-    .search-filter {
-      padding: 12px 20px;
-      background: #f8f9fa;
+    .filters {
+      padding: 10px 15px;
+      background: #f9f9f9;
       border-bottom: 1px solid #eee;
+      display: flex;
+      gap: 10px;
+      align-items: center;
     }
     .search-wrapper {
       position: relative;
+      flex: 1;
       max-width: 500px;
     }
     #search-input {
       width: 100%;
-      padding: 9px 12px 9px 36px;
+      padding: 7px 7px 7px 32px;
       border: 1px solid #ddd;
       border-radius: 6px;
-      font-size: 14px;
+      font-size: 12px;
+      box-sizing: border-box;
     }
     #search-input:focus {
-      outline: none;
       border-color: #000;
-      box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+      outline: none;
     }
     .search-icon {
       position: absolute;
-      left: 12px;
+      left: 10px;
       top: 50%;
       transform: translateY(-50%);
-      color: #666;
+      color: #777;
+      font-size: 13px;
     }
-    .table-container {
-      max-height: calc(100vh - 150px); /* Adjust based on header/search height */
-      overflow-y: auto;
-      position: relative;
+    .date-range {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .date-input {
+      padding: 7px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 12px;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 12.5px;
+      font-size: 11px;
+    }
+    th, td {
+      padding: 6px 8px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+      vertical-align: top;
     }
     th {
       background: #000;
       color: white;
-      padding: 10px 12px;
-      text-align: left;
       font-weight: 600;
-      cursor: pointer;
-      user-select: none;
       position: sticky;
       top: 0;
-      z-index: 10;
+      z-index: 1;
+      cursor: pointer;
     }
     th:hover {
       background: #111;
     }
-    td {
-      padding: 8px 12px;
-      border-bottom: 1px solid #eee;
-      vertical-align: middle;
-    }
     tr:hover {
-      background: #f8f9fa;
+      background: #f5f5f5;
     }
-    .order-number { font-weight: 600; color: #1a1a1a; }
     .status {
-      display: flex;
-      align-items: center;
-      gap: 6px;
       font-weight: 600;
     }
-    .status-success { color: #16a34a; }
-    .status-failed { color: #dc2626; }
-    .status-skipped { color: #ea580c; }
+    .status-success { color: #006400; }
+    .status-failed { color: #8B0000; }
+    .status-skipped { color: #8B4513; }
     .products {
-      line-height: 1.35;
-      max-width: 380px;
+      line-height: 1.2;
+      white-space: pre-wrap;
     }
     .error-msg {
-      color: #dc2626;
-      max-width: 260px;
+      color: #8B0000;
+      max-width: 220px;
       word-break: break-word;
     }
-    .resync-btn {
+    .action-btn {
+      padding: 4px 8px;
       background: #000;
       color: white;
       border: none;
-      padding: 5px 10px;
       border-radius: 4px;
       cursor: pointer;
       font-size: 11px;
-      font-weight: 500;
     }
-    .resync-btn:hover {
-      background: #333;
+    .action-btn:hover {
+      background: #222;
     }
     .empty {
       text-align: center;
-      padding: 60px 20px;
-      color: #666;
-      font-size: 1.1rem;
+      padding: 40px;
+      color: #555;
     }
     /* Responsive */
-    @media (max-width: 1100px) {
-      table { font-size: 12px; }
-      td, th { padding: 7px 10px; }
+    @media (max-width: 992px) {
+      table { min-width: 900px; }
+      .container { padding: 0; }
+      .filters { flex-direction: column; }
     }
     @media (max-width: 768px) {
-      .header {
-        flex-direction: column;
-        text-align: center;
-        gap: 8px;
-      }
-      table {
-        display: block;
-        overflow-x: auto;
-        white-space: nowrap;
-      }
+      .header { flex-direction: column; gap: 8px; text-align: center; }
+      th, td { font-size: 10px; padding: 5px; }
+      .products { font-size: 9px; }
     }
   </style>
 </head>
@@ -166,76 +164,74 @@
       <div class="total">Total Orders: <%= totalOrders %></div>
     </div>
 
-    <div class="search-filter">
+    <div class="filters">
       <div class="search-wrapper">
         <i class="fas fa-search search-icon"></i>
         <input type="text" id="search-input" placeholder="Filter by order #, store, timestamp, status, product, error..." />
+      </div>
+      <div class="date-range">
+        <input type="text" id="from-date" placeholder="From date (MM/DD/YYYY)" class="date-input" />
+        <input type="text" id="to-date" placeholder="To date (MM/DD/YYYY)" class="date-input" />
       </div>
     </div>
 
     <% if (orders.length === 0) { %>
       <div class="empty">No orders found yet. New orders will appear here automatically.</div>
     <% } else { %>
-      <div class="table-container">
-        <table id="orders-table">
-          <thead>
+      <table id="orders-table">
+        <thead>
+          <tr>
+            <th data-sort="orderNumber">Order # <i class="fas fa-sort"></i></th>
+            <th data-sort="storeName">Store Name <i class="fas fa-sort"></i></th>
+            <th data-sort="timestamp">Timestamp (EST) <i class="fas fa-sort"></i></th>
+            <th data-sort="status">Status <i class="fas fa-sort"></i></th>
+            <th>Products (Title + SKU x Qty)</th>
+            <th>Error Message</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody class="list">
+          <% orders.forEach(o => { %>
             <tr>
-              <th data-sort="orderNumber">Order # <i class="fas fa-sort"></i></th>
-              <th data-sort="storeName">Store Name <i class="fas fa-sort"></i></th>
-              <th data-sort="timestamp">Timestamp (EST) <i class="fas fa-sort"></i></th>
-              <th data-sort="status">Status <i class="fas fa-sort"></i></th>
-              <th>Products (Title + SKU × Qty)</th>
-              <th>Error Message</th>
-              <th>Action</th>
+              <td data-label="Order #" class="orderNumber"><%= o.name || o.orderNumber || o.shopifyOrderId || '-' %></td>
+              <td data-label="Store Name" class="storeName"><%= o.storeName || o.shopDomain || 'Unknown' %></td>
+              <td data-label="Timestamp" class="timestamp">
+                <%= new Date(o.timestamp).toLocaleString('en-US', { 
+                  timeZone: 'America/New_York',
+                  month: 'numeric', day: 'numeric', year: 'numeric',
+                  hour: 'numeric', minute: '2-digit', hour12: true 
+                }) %>
+              </td>
+              <td data-label="Status" class="status <%= o.status %>">
+                <i class="fas fa-<%= o.status === 'success' ? 'check-circle' : 'exclamation-circle' %>"></i>
+                <%= o.status %>
+              </td>
+              <td data-label="Products" class="products">
+                <% (o.products || []).forEach(p => { %>
+                  <div><%= p.title %> (<%= p.sku %> × <%= p.quantity %>)</div>
+                <% }); %>
+              </td>
+              <td data-label="Error Message" class="error-msg"><%= o.errorMessage || '-' %></td>
+              <td data-label="Action">
+                <% if (o.status === 'failed' || o.status === 'skipped') { %>
+                  <button class="action-btn" onclick="resync('<%= o.shopifyOrderId %>')">Re-sync</button>
+                <% } %>
+              </td>
             </tr>
-          </thead>
-          <tbody class="list">
-            <% orders.forEach(o => { %>
-              <tr>
-                <td class="orderNumber"><%= o.name || o.orderNumber || o.shopifyOrderId || '-' %></td>
-                <td class="storeName"><%= o.storeName || o.shopDomain || 'Unknown' %></td>
-                <td class="timestamp">
-                  <%= new Date(o.timestamp).toLocaleString('en-US', { 
-                    timeZone: 'America/New_York',
-                    month: 'numeric', day: 'numeric', year: 'numeric',
-                    hour: 'numeric', minute: '2-digit', hour12: true 
-                  }) %>
-                </td>
-                <td class="status <%= o.status %>">
-                  <i class="fas fa-circle" style="color: <%= o.status === 'success' ? '#16a34a' : o.status === 'failed' ? '#dc2626' : '#ea580c' %>;"></i>
-                  <%= o.status %>
-                </td>
-                <td class="products">
-                  <% (o.products || []).forEach(p => { %>
-                    <div><%= p.title %> (<%= p.sku %> × <%= p.quantity %>)</div>
-                  <% }); %>
-                </td>
-                <td class="error-msg"><%= o.errorMessage || '-' %></td>
-                <td>
-                  <% if (o.status === 'failed' || o.status === 'skipped') { %>
-                    <button class="resync-btn" onclick="resync('<%= o.shopifyOrderId %>')">Re-sync</button>
-                  <% } %>
-                </td>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
-      </div>
+          <% }); %>
+        </tbody>
+      </table>
     <% } %>
   </div>
 
   <script>
-    // Enhanced List.js with full-text search on all columns
-    const userList = new List('orders-table', {
-      valueNames: [
-        'orderNumber',
-        'storeName',
-        'timestamp',
-        'status',
-        'products',
-        'error-msg'
-      ]
-    });
+    // List.js - live filtering as you type
+    const options = {
+      valueNames: ['orderNumber', 'storeName', 'timestamp', 'status', 'products', 'error-msg'],
+      searchClass: 'search',
+      sortClass: 'sort'
+    };
+    const userList = new List('orders-table', options);
 
     // Sorting with visual feedback
     document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -248,19 +244,49 @@
       });
     });
 
+    // Date range filter
+    flatpickr("#from-date", { dateFormat: "m/d/Y" });
+    flatpickr("#to-date", { dateFormat: "m/d/Y" });
+
+    const fromDateInput = document.getElementById('from-date');
+    const toDateInput = document.getElementById('to-date');
+
+    function filterByDate() {
+      const fromDate = fromDateInput.value ? new Date(fromDateInput.value) : null;
+      const toDate = toDateInput.value ? new Date(toDateInput.value) : null;
+
+      userList.filter(function(item) {
+        if (!fromDate && !toDate) return true;
+
+        const timestamp = new Date(item.values().timestamp);
+        if (fromDate && timestamp < fromDate) return false;
+        if (toDate && timestamp > toDate) return false;
+        return true;
+      });
+    }
+
+    fromDateInput.addEventListener('change', filterByDate);
+    toDateInput.addEventListener('change', filterByDate);
+
     async function resync(orderId) {
       if (!confirm(`Re-sync order #${orderId}?`)) return;
       try {
-        const res = await fetch(`/resync/${orderId}`, { method: 'POST' });
+        const res = await fetch(`/resync/${orderId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
         const text = await res.text();
+        console.log('Re-sync response:', res.status, text); // log for debug
         if (res.ok) {
           alert('Re-sync successful!');
           location.reload();
         } else {
-          alert('Re-sync failed: ' + text.substring(0, 200));
+          alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
         }
       } catch (err) {
-        alert('Error: ' + err.message);
+        alert('Network error during re-sync: ' + err.message);
       }
     }
   </script>
