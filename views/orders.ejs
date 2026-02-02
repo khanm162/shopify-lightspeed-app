@@ -248,6 +248,8 @@
       searchClass: 'search'
     };
     const userList = new List('orders-table', options);
+	// Default sort: newest orders on top
+userList.sort('timestamp', { order: 'desc' });
 
     // Update total orders count on every filter/search change
     const totalDisplay = document.getElementById('total-display');

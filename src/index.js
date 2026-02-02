@@ -131,10 +131,10 @@ app.get("/dashboard", async (req, res) => {
   .reverse();
       enhancedOrders = orders.map(o => ({
   ...o,
-  orderNumber: o.name || o.shopifyOrderId || '-',
+  orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
   storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
   timestamp: o.timestamp || o.created_at || new Date().toISOString(),
-}));
+})).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       total = enhancedOrders.length;
       console.log(`[DASHBOARD] Rendered ${total} orders`);
     } catch (err) {
