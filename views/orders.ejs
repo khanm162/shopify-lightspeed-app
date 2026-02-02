@@ -45,14 +45,14 @@
       background: #f9f9f9;
       border-bottom: 1px solid #eee;
       display: flex;
-      gap: 12px;
+      gap: 10px;
       flex-wrap: wrap;
       align-items: center;
     }
     .search-wrapper {
       position: relative;
-      flex: 1;
-      min-width: 250px;
+      flex: 1 1 300px; /* prevents over-expansion */
+      max-width: 500px;
     }
     #search-input {
       width: 100%;
@@ -61,12 +61,19 @@
       border-radius: 4px;
       font-size: 12px;
     }
+    .date-range {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
     .date-input {
       padding: 6px;
       border: 1px solid #ddd;
       border-radius: 4px;
       font-size: 12px;
       width: 130px;
+      min-width: 120px;
     }
     .clear-btn {
       padding: 6px 12px;
@@ -76,6 +83,7 @@
       border-radius: 4px;
       cursor: pointer;
       font-size: 12px;
+      white-space: nowrap;
     }
     table {
       width: 100%;
@@ -204,7 +212,7 @@
     const userList = new List('orders-table', options);
     console.log("List.js initialized");
 
-    // Default sort: newest first
+    // Default: newest first
     userList.sort('timestamp', { order: 'desc' });
     console.log("Default sort applied");
 
@@ -228,7 +236,7 @@
       userList.search(this.value);
     });
 
-    // Date range filter - safe & accurate
+    // Date range filter - safe version
     flatpickr("#from-date", { dateFormat: "m/d/Y" });
     flatpickr("#to-date", { dateFormat: "m/d/Y" });
 
@@ -249,7 +257,7 @@
 
       userList.filter(function(item) {
         const tsStr = (item.values().timestamp || '').trim();
-        if (!tsStr) return true; // skip invalid
+        if (!tsStr) return true;
 
         const ts = new Date(tsStr);
         if (isNaN(ts.getTime())) return true;
@@ -265,6 +273,7 @@
 
     // Clear Filters
     document.getElementById('clear-filters').addEventListener('click', function() {
+      console.log("Clear Filters clicked");
       document.getElementById('search-input').value = '';
       userList.search('');
 
