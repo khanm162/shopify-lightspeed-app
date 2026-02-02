@@ -105,6 +105,9 @@
       top: 0;
       z-index: 1;
     }
+    th:hover {
+      background: #111;
+    }
     tr:hover {
       background: #f5f5f5;
     }
@@ -154,7 +157,7 @@
   <div class="container">
     <div class="header">
       <h1>Order Sync Dashboard</h1>
-      <div class="total">Total Orders: <%= totalOrders %></div>
+      <div class="total" id="total-display">Total Orders: <%= totalOrders %></div>
     </div>
 
     <div class="filters">
@@ -232,12 +235,28 @@
     };
     const userList = new List('orders-table', options);
 
+    // Update total orders count on every filter/search change
+    const totalDisplay = document.getElementById('total-display');
+    const originalTotal = <%= totalOrders %>;
+
+    function updateTotal() {
+      const visibleCount = userList.visibleItems.length;
+      totalDisplay.textContent = `Total Orders: ${visibleCount} (of ${originalTotal})`;
+    }
+
+    // Listen to List.js events for search/filter changes
+    userList.on('updated', updateTotal);
+    userList.on('searchComplete', updateTotal);
+
+    // Initial total
+    updateTotal();
+
     // Live search on input
     document.getElementById('search-input').addEventListener('input', function() {
       userList.search(this.value);
     });
 
-    // Date range with inclusive end date
+    // Date range filter with inclusive end date
     flatpickr("#from-date", { dateFormat: "m/d/Y" });
     flatpickr("#to-date", { dateFormat: "m/d/Y" });
 
@@ -245,11 +264,11 @@
     const toInput = document.getElementById('to-date');
 
     function applyDateFilter() {
-      const fromVal = fromInput.value.trim();
-      const toVal = toInput.value.trim();
+      const fromStr = fromInput.value.trim();
+      const toStr = toInput.value.trim();
 
-      let from = fromVal ? new Date(fromVal) : null;
-      let to = toVal ? new Date(toVal) : null;
+      let from = fromStr ? new Date(fromStr) : null;
+      let to = toStr ? new Date(toStr) : null;
 
       if (from) from.setHours(0, 0, 0, 0);
       if (to) to.setHours(23, 59, 59, 999);
