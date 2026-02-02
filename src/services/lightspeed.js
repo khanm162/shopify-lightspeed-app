@@ -1,39 +1,36 @@
 const axios = require("axios");
 const { Redis } = require('@upstash/redis');
-
 const API_BASE = "https://api.lightspeedapp.com";
 const TOKEN_URL = "https://cloud.lightspeedapp.com/auth/oauth/token";
 const ACCOUNT_ID = process.env.LIGHTSPEED_ACCOUNT_ID;
-
-// Initialize Redis
+// Initialize Redis client using Vercel/Upstash env vars
 let redis = null;
 let redisAvailable = false;
-
 try {
   redis = new Redis({
     url: process.env.KV_REST_API_URL || process.env.REDIS_URL || process.env.KV_URL,
     token: process.env.KV_REST_API_TOKEN || process.env.KV_REST_API_READ_ONLY_TOKEN,
   });
-
+  // Quick test connection (non-blocking)
   redis.ping()
     .then(() => {
       redisAvailable = true;
       console.log("✅ Upstash Redis connected successfully");
     })
     .catch(err => {
-      console.error("❌ Redis ping failed:", err.message);
+      console.error("❌ Failed to connect to Upstash Redis:", err.message);
+      console.warn("Continuing without persistent tokens (in-memory fallback)");
     });
 } catch (err) {
-  console.error("❌ Redis init failed:", err.message);
+  console.error("❌ Redis initialization failed:", err.message);
+  console.warn("Continuing without Redis - tokens will be in-memory only");
 }
-
 let accessToken = null;
 let refreshToken = null;
-
-// ── OAUTH & Refresh ─────────────────────────────────────────────────────────────
-
+/* =========================
+   OAUTH & Refresh
+========================= */
 async function exchangeCodeForToken(code) {
-  console.log("[AUTH] Starting exchange with code:", code.substring(0, 10) + "...");
   const res = await axios.post(
     TOKEN_URL,
     new URLSearchParams({
@@ -45,108 +42,67 @@ async function exchangeCodeForToken(code) {
     }).toString(),
     { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
   );
-
   accessToken = res.data.access_token;
   refreshToken = res.data.refresh_token;
-
-  console.log("[AUTH] Tokens received - access:", accessToken.substring(0, 20) + "...");
-  console.log("[AUTH] Refresh token length:", refreshToken?.length || "MISSING!");
-
   if (redisAvailable) {
-    const payload = JSON.stringify({ accessToken, refreshToken });
-    await redis.set('lightspeed_tokens', payload);
-    console.log("[AUTH] Saved to Redis - payload length:", payload.length);
-    // Verify save
-    const verify = await redis.get('lightspeed_tokens');
-    console.log("[AUTH] Verification read back:", verify ? "OK" : "FAILED");
+    await redis.set('lightspeed_tokens', JSON.stringify({ accessToken, refreshToken }));
+    console.log("✅ Tokens saved to Upstash Redis");
   } else {
-    console.warn("[AUTH] Redis unavailable - tokens only in memory");
+    console.warn("Redis not available - tokens not persisted");
   }
-
   return accessToken;
 }
-
 async function refreshAccessToken() {
-  console.log("[REFRESH] Starting... Current refreshToken length:", refreshToken?.length || "missing");
-
   if (!refreshToken) {
-    await loadTokens();
-    console.log("[REFRESH] After load - refreshToken length:", refreshToken?.length || "still missing");
-    if (!refreshToken) {
-      throw new Error("No refresh token available - re-authenticate required");
-    }
-  }
-
-  try {
-    const res = await axios.post(
-      TOKEN_URL,
-      new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: process.env.LIGHTSPEED_CLIENT_ID,
-        client_secret: process.env.LIGHTSPEED_CLIENT_SECRET
-      }).toString(),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-    );
-
-    accessToken = res.data.access_token;
-    refreshToken = res.data.refresh_token || refreshToken;
-
     if (redisAvailable) {
-      await redis.set('lightspeed_tokens', JSON.stringify({ accessToken, refreshToken }));
-      console.log("[REFRESH] Success - new tokens saved to Redis");
-    }
-
-    return accessToken;
-  } catch (err) {
-    console.error("[REFRESH] API call failed:", err.message);
-    throw err;
-  }
-}
-
-async function loadTokens() {
-  if (!redisAvailable) {
-    console.warn("[LOAD] Redis not available - cannot load tokens");
-    return;
-  }
-
-  const saved = await redis.get('lightspeed_tokens');
-  console.log("[LOAD] Raw Redis value for lightspeed_tokens:", saved || "null/empty");
-
-  if (saved) {
-    try {
-      const tokens = JSON.parse(saved);
-      if (tokens?.accessToken && tokens?.refreshToken) {
+      const saved = await redis.get('lightspeed_tokens');
+      if (saved) {
+        const tokens = JSON.parse(saved);
         accessToken = tokens.accessToken;
         refreshToken = tokens.refreshToken;
-        console.log("[LOAD] Success - tokens loaded from Redis");
-        console.log("[LOAD] Access token length:", accessToken.length);
-        console.log("[LOAD] Refresh token length:", refreshToken.length);
-      } else {
-        console.warn("[LOAD] Invalid tokens - deleting key");
-        await redis.del('lightspeed_tokens');
       }
-    } catch (err) {
-      console.error("[LOAD] Parse error:", err.message);
-      console.warn("[LOAD] Deleting corrupted key");
-      await redis.del('lightspeed_tokens');
+    }
+    if (!refreshToken) throw new Error("No refresh token available");
+  }
+  const res = await axios.post(
+    TOKEN_URL,
+    new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: process.env.LIGHTSPEED_CLIENT_ID,
+      client_secret: process.env.LIGHTSPEED_CLIENT_SECRET
+    }).toString(),
+    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+  );
+  accessToken = res.data.access_token;
+  refreshToken = res.data.refresh_token || refreshToken;
+  if (redisAvailable) {
+    await redis.set('lightspeed_tokens', JSON.stringify({ accessToken, refreshToken }));
+    console.log("✅ Tokens refreshed and saved to Upstash Redis");
+  }
+  return accessToken;
+}
+async function loadTokens() {
+  if (redisAvailable) {
+    const saved = await redis.get('lightspeed_tokens');
+    if (saved) {
+      const tokens = JSON.parse(saved);
+      accessToken = tokens.accessToken;
+      refreshToken = tokens.refreshToken;
+      console.log("Tokens loaded from Upstash Redis");
     }
   } else {
-    console.warn("[LOAD] No tokens in Redis - re-auth required");
+    console.warn("Redis not available - skipping token load");
   }
 }
-
-loadTokens(); // Run on startup
-
+loadTokens(); // Load on startup
 function authHeader() {
   if (!accessToken) throw new Error("Lightspeed token missing");
   return { Authorization: `Bearer ${accessToken}` };
 }
-
 function hasValidToken() {
   return !!accessToken;
 }
-
 /* =========================
    ITEMS & SALES
 ========================= */
