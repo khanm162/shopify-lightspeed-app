@@ -236,15 +236,30 @@ app.get("/cron/retry-failed", async (req, res) => {
   try {
     const queued = await redis.lrange('failed_queue', 0, 9);
     if (queued.length === 0) return res.send("No queued orders to retry");
+
     console.log(`[RETRY-CRON] Processing ${queued.length} queued failed orders`);
 
     for (const item of queued) {
+      // Log safely – check type first
+      if (typeof item === 'string') {
+        console.log("[RETRY-CRON] Raw item preview:", item.substring(0, 300));
+      } else if (typeof item === 'object') {
+        console.log("[RETRY-CRON] Parsed object item:", JSON.stringify(item, null, 2).substring(0, 300));
+      } else {
+        console.warn("[RETRY-CRON] Unexpected item type:", typeof item);
+      }
+
       let data;
       try {
-        data = JSON.parse(item);
+        // If it's already an object (auto-parsed by SDK), use it directly
+        if (typeof item === 'object' && item !== null) {
+          data = item;
+        } else {
+          data = JSON.parse(item);
+        }
       } catch (e) {
-        console.error("[RETRY-CRON] Corrupted queued item:", item.substring(0, 300));
-        await redis.lrem('failed_queue', 1, item); // Auto-remove bad item
+        console.error("[RETRY-CRON] Parse failed - removing corrupted item");
+        await redis.lrem('failed_queue', 1, item); // Auto-remove
         continue;
       }
 
@@ -256,7 +271,7 @@ app.get("/cron/retry-failed", async (req, res) => {
 
       try {
         await createSale({
-          saleLines: data.saleLines,
+          saleLines: data.saleLines || [],
           customerID: Number(data.lsCustomerID)
         });
         console.log(`[RETRY-CRON] Success for #${data.shopifyOrderId}`);
@@ -269,9 +284,10 @@ app.get("/cron/retry-failed", async (req, res) => {
         await redis.lpush('failed_queue', JSON.stringify(data));
       }
     }
+
     res.send(`Processed ${queued.length} queued retries`);
   } catch (err) {
-    console.error("[RETRY-CRON] Error:", err.message);
+    console.error("[RETRY-CRON] Critical error:", err.message);
     res.status(500).send("Retry failed");
   }
 });
