@@ -86,55 +86,66 @@ app.set('views', path.join(process.cwd(), 'views'));
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
+
   if (!redis) {
     console.warn("Redis unavailable - dashboard empty");
-  } else {
-    try {
-      const storeNameMap = {};
-      for (const key in process.env) {
-        if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
-          const domainKey = key.replace('_NAME', '_DOMAIN');
-          const domain = process.env[domainKey];
-          if (domain) storeNameMap[domain] = process.env[key];
-        }
-      }
-      const rawOrders = await redis.lrange('order_history', 0, -1) || [];
-      console.log(`[DASHBOARD] Fetched ${rawOrders.length} raw items`);
-      const orders = rawOrders
-  .map((item, idx) => {
-    if (item === null || item === undefined) {
-      console.warn(`[DASHBOARD] Null item at #${idx}`);
-      return null;
-    }
-    const itemType = typeof item;
-    console.log(`[DASHBOARD] Item #${idx} type: ${itemType}`);
-    if (itemType === 'object' && item !== null) {
-      // Already parsed by @upstash/redis
-      console.log(`[DASHBOARD] Using pre-parsed object #${idx} (ID: ${item.shopifyOrderId || 'unknown'})`);
-      return item;
-    }
-    if (itemType === 'string') {
-      try {
-        const parsed = JSON.parse(item);
-        console.log(`[DASHBOARD] Parsed string item #${idx} OK`);
-        return parsed;
-      } catch (err) {
-        console.error(`[DASHBOARD] Parse fail on string #${idx}:`, err.message);
-        console.error("Raw string preview:", item.substring(0, 300));
-        return null;
-      }
-    }
-    console.error(`[DASHBOARD] Unexpected item type #${idx}:`, itemType, item);
-    return null;
-  })
-  .filter(Boolean)
-  
-      total = enhancedOrders.length;
-      console.log(`[DASHBOARD] Rendered ${total} orders`);
-    } catch (err) {
-      console.error("Dashboard load error:", err.message);
-    }
+    return res.render('orders', { totalOrders: 0, orders: [] });
   }
+
+  try {
+    const storeNameMap = {};
+    for (const key in process.env) {
+      if (key.startsWith('SHOPIFY_STORE_') && key.endsWith('_NAME')) {
+        const domainKey = key.replace('_NAME', '_DOMAIN');
+        const domain = process.env[domainKey];
+        if (domain) storeNameMap[domain] = process.env[key];
+      }
+    }
+
+    const rawOrders = await redis.lrange('order_history', 0, -1) || [];
+    console.log(`[DASHBOARD] Fetched ${rawOrders.length} raw items`);
+
+    const orders = rawOrders
+      .map((item, idx) => {
+        if (item === null || item === undefined) {
+          console.warn(`[DASHBOARD] Null item at #${idx}`);
+          return null;
+        }
+        const itemType = typeof item;
+        console.log(`[DASHBOARD] Item #${idx} type: ${itemType}`);
+        if (itemType === 'object' && item !== null) {
+          console.log(`[DASHBOARD] Using pre-parsed object #${idx} (ID: ${item.shopifyOrderId || 'unknown'})`);
+          return item;
+        }
+        if (itemType === 'string') {
+          try {
+            const parsed = JSON.parse(item);
+            console.log(`[DASHBOARD] Parsed string item #${idx} OK`);
+            return parsed;
+          } catch (err) {
+            console.error(`[DASHBOARD] Parse fail on string #${idx}:`, err.message);
+            console.error("Raw string preview:", item.substring(0, 300));
+            return null;
+          }
+        }
+        console.error(`[DASHBOARD] Unexpected item type #${idx}:`, itemType, item);
+        return null;
+      })
+      .filter(Boolean);
+
+    enhancedOrders = orders.map(o => ({
+      ...o,
+      orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
+      storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
+      timestamp: o.timestamp || o.created_at || new Date().toISOString(),
+    }));
+
+    total = enhancedOrders.length;
+    console.log(`[DASHBOARD] Rendered ${total} orders`);
+  } catch (err) {
+    console.error("Dashboard load error:", err.message);
+  }
+
   res.render('orders', {
     totalOrders: total,
     orders: enhancedOrders
