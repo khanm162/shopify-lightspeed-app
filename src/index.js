@@ -134,11 +134,17 @@ app.get("/dashboard", async (req, res) => {
       .filter(Boolean);
 
     enhancedOrders = orders.map(o => ({
-      ...o,
-      orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
-      storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
-      timestamp: o.timestamp || o.created_at || new Date().toISOString(),
-    }));
+  ...o,
+  orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
+  storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
+  timestamp: o.timestamp || o.created_at || new Date().toISOString(),
+}));
+
+// Sort newest first (descending timestamp)
+enhancedOrders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+total = enhancedOrders.length;
+console.log(`[DASHBOARD] Rendered ${total} sorted orders (newest first)`);
 
     total = enhancedOrders.length;
     console.log(`[DASHBOARD] Rendered ${total} orders`);

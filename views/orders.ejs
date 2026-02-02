@@ -216,113 +216,106 @@
     <% } %>
   </div>
 
-  <script>
-    console.log("Dashboard script loaded successfully");
+ <script>
+  console.log("Dashboard script loaded successfully");
 
-    const options = {
-      valueNames: [
-        'orderNumber',
-        'storeName',
-        'timestamp',
-        'status',
-        'products',
-        'error-msg'
-      ],
-      searchClass: 'search',
-      sortClass: 'sort'
-    };
+  const userList = new List('orders-table', {
+    valueNames: ['orderNumber', 'storeName', 'timestamp', 'status', 'products', 'error-msg'],
+    searchClass: 'search',
+    sortClass: 'sort'
+  });
+  console.log("List.js initialized");
 
-    const userList = new List('orders-table', options);
-    console.log("List.js initialized");
+  // Force newest first on load
+  userList.sort('timestamp', { order: 'desc' });
+  console.log("Forced newest-first sort");
 
-    // Default: newest first
+  // Update total
+  const totalDisplay = document.getElementById('total-display');
+  const originalTotal = <%= totalOrders %>;
+
+  function updateTotal() {
+    const visible = userList.visibleItems.length;
+    totalDisplay.textContent = `Total Orders: ${visible} (of ${originalTotal})`;
+  }
+
+  userList.on('updated', updateTotal);
+  userList.on('searchComplete', updateTotal);
+  userList.on('sortComplete', updateTotal);
+
+  updateTotal();
+
+  // Manual click handler with debug (fallback if List.js fails)
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const field = th.getAttribute('data-sort');
+      console.log(`Clicked header: ${field}`);
+
+      // Toggle asc/desc
+      const isAsc = th.classList.contains('asc');
+      const order = isAsc ? 'desc' : 'asc';
+
+      console.log(`Sorting ${field} ${order}`);
+      userList.sort(field, { order });
+
+      // Visual feedback
+      th.classList.remove('asc', 'desc');
+      th.classList.add(order);
+    });
+  });
+
+  // Search
+  document.getElementById('search-input').addEventListener('input', function() {
+    userList.search(this.value);
+  });
+
+  // Date filter
+  flatpickr("#from-date", { dateFormat: "m/d/Y" });
+  flatpickr("#to-date", { dateFormat: "m/d/Y" });
+
+  const fromInput = document.getElementById('from-date');
+  const toInput = document.getElementById('to-date');
+
+  function applyDateFilter() {
+    const fromStr = fromInput.value.trim();
+    const toStr = toInput.value.trim();
+
+    let from = fromStr ? new Date(fromStr) : null;
+    let to = toStr ? new Date(toStr) : null;
+
+    if (from) from.setHours(0, 0, 0, 0);
+    if (to) to.setHours(23, 59, 59, 999);
+
+    userList.filter(item => {
+      const tsStr = (item.values().timestamp || '').trim();
+      if (!tsStr) return true;
+
+      const ts = new Date(tsStr);
+      if (isNaN(ts.getTime())) return true;
+
+      if (from && ts < from) return false;
+      if (to && ts > to) return false;
+      return true;
+    });
+  }
+
+  fromInput.addEventListener('change', applyDateFilter);
+  toInput.addEventListener('change', applyDateFilter);
+
+  // Clear
+  document.getElementById('clear-filters').addEventListener('click', function() {
+    document.getElementById('search-input').value = '';
+    userList.search('');
+
+    fromInput.value = '';
+    toInput.value = '';
+
+    userList.filter(() => true);
     userList.sort('timestamp', { order: 'desc' });
-    console.log("Default sort applied");
-
-    // Update total
-    const totalDisplay = document.getElementById('total-display');
-    const originalTotal = <%= totalOrders %>;
-
-    function updateTotal() {
-      const visibleCount = userList.visibleItems.length;
-      totalDisplay.textContent = `Total Orders: ${visibleCount} (of ${originalTotal})`;
-    }
-
-    userList.on('updated', updateTotal);
-    userList.on('searchComplete', updateTotal);
-    userList.on('sortComplete', updateTotal);
-
     updateTotal();
+  });
 
-    // Live search
-    document.getElementById('search-input').addEventListener('input', function() {
-      userList.search(this.value);
-    });
-
-    // Date range filter
-    flatpickr("#from-date", { dateFormat: "m/d/Y" });
-    flatpickr("#to-date", { dateFormat: "m/d/Y" });
-
-    const fromInput = document.getElementById('from-date');
-    const toInput = document.getElementById('to-date');
-
-    function applyDateFilter() {
-      const fromStr = fromInput.value.trim();
-      const toStr = toInput.value.trim();
-
-      let from = fromStr ? new Date(fromStr) : null;
-      let to = toStr ? new Date(toStr) : null;
-
-      if (from) from.setHours(0, 0, 0, 0);
-      if (to) to.setHours(23, 59, 59, 999);
-
-      userList.filter(function(item) {
-        const tsStr = (item.values().timestamp || '').trim();
-        if (!tsStr) return true;
-
-        const ts = new Date(tsStr);
-        if (isNaN(ts.getTime())) return true;
-
-        if (from && ts < from) return false;
-        if (to && ts > to) return false;
-        return true;
-      });
-    }
-
-    fromInput.addEventListener('change', applyDateFilter);
-    toInput.addEventListener('change', applyDateFilter);
-
-    // Clear Filters
-    document.getElementById('clear-filters').addEventListener('click', function() {
-      document.getElementById('search-input').value = '';
-      userList.search('');
-
-      fromInput.value = '';
-      toInput.value = '';
-
-      userList.filter(() => true);
-      userList.sort('timestamp', { order: 'desc' });
-      updateTotal();
-    });
-
-    async function resync(orderId) {
-      if (!confirm(`Re-sync order #${orderId}?`)) return;
-      try {
-        const res = await fetch(`/resync/${orderId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        const text = await res.text();
-        if (res.ok) {
-          alert('Re-sync successful!');
-          location.reload();
-        } else {
-          alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
-        }
-      } catch (err) {
-        alert('Network error: ' + err.message);
-      }
-    }
-  </script>
+  console.log("All listeners attached");
+</script>
 </body>
 </html>
