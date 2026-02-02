@@ -238,9 +238,9 @@
   </div>
 
 <script>
-  console.log("Dashboard script loaded successfully"); // Should appear in console on page load
+  console.log("Dashboard script loaded successfully");
 
-  // List.js setup with date parsing
+  // List.js setup with custom date parser
   const options = {
     valueNames: [
       'orderNumber',
@@ -250,7 +250,7 @@
         sort: function(a, b) {
           const dateA = new Date(a.innerText.trim());
           const dateB = new Date(b.innerText.trim());
-          return dateA - dateB;
+          return dateA - dateB; // asc by default, List.js handles toggle
         }
       },
       'status',
@@ -265,12 +265,12 @@
   const userList = new List('orders-table', options);
   console.log("List.js initialized:", userList);
 
-  // Default sort: newest on top
+  // Default: newest on top (descending timestamp)
   console.log("Applying default sort (timestamp desc)...");
   userList.sort('timestamp', { order: 'desc' });
   console.log("Default sort applied");
 
-  // Update total on changes
+  // Update total count on every change
   const totalDisplay = document.getElementById('total-display');
   const originalTotal = <%= totalOrders %>;
 
@@ -285,24 +285,13 @@
 
   updateTotal();
 
-  // Debug click on headers
-  document.querySelectorAll('th[data-sort]').forEach(th => {
-    th.addEventListener('click', () => {
-      const sortBy = th.getAttribute('data-sort');
-      console.log(`Header clicked: ${sortBy}`);
-      const current = th.classList.contains('asc') ? 'desc' : 'asc';
-      console.log(`Sorting ${sortBy} ${current}`);
-      userList.sort(sortBy, { order: current });
-    });
-  });
-
   // Live search
   document.getElementById('search-input').addEventListener('input', function() {
     console.log("Search input:", this.value);
     userList.search(this.value);
   });
 
-  // Date range filter
+  // Date range filter (inclusive end date)
   flatpickr("#from-date", { dateFormat: "m/d/Y" });
   flatpickr("#to-date", { dateFormat: "m/d/Y" });
 
@@ -310,18 +299,16 @@
   const toInput = document.getElementById('to-date');
 
   function applyDateFilter() {
-    console.log("Date filter applied");
+    console.log("Date filter applied - From:", fromInput.value, "To:", toInput.value);
+
     const fromStr = fromInput.value.trim();
     const toStr = toInput.value.trim();
 
-    let from = fromStr ? new Date(fromStr) : null;
-    let to = toStr ? new Date(toStr) : null;
-
-    if (from) from.setHours(0, 0, 0, 0);
-    if (to) to.setHours(23, 59, 59, 999);
+    let from = fromStr ? new Date(fromStr + " 00:00:00") : null;
+    let to = toStr ? new Date(toStr + " 23:59:59") : null;
 
     userList.filter(function(item) {
-      const tsStr = item.values().timestamp;
+      const tsStr = item.values().timestamp.trim();
       const ts = new Date(tsStr);
       if (from && ts < from) return false;
       if (to && ts > to) return false;
@@ -342,7 +329,7 @@
     toInput.value = '';
 
     userList.filter(() => true);
-    userList.sort('timestamp', { order: 'desc' });
+    userList.sort('timestamp', { order: 'desc' }); // Reset to newest first
     updateTotal();
   });
 
