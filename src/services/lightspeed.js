@@ -59,19 +59,21 @@ async function exchangeCodeForToken(code) {
     console.log("[AUTH] Refresh token length:", refreshToken?.length || "MISSING!");
 
     if (redisAvailable) {
-      const payload = JSON.stringify({ accessToken, refreshToken });
-      await redis.set('lightspeed_tokens', payload);
-      console.log("[AUTH] Tokens saved to Redis - payload length:", payload.length);
+  const payload = JSON.stringify({ accessToken, refreshToken });
+  await redis.set('lightspeed_tokens', payload);
+  console.log("[AUTH] Tokens saved to Redis - payload length:", payload.length);
 
-      // Verify save immediately
-      const verify = await redis.get('lightspeed_tokens');
-      console.log("[AUTH] Verification read back:", verify ? "OK" : "FAILED");
-      if (verify) {
-        console.log("[AUTH] Saved value preview:", verify.substring(0, 200));
-      }
-    } else {
-      console.warn("[AUTH] Redis not available - tokens not persisted");
-    }
+  // Safe verification
+  const verify = await redis.get('lightspeed_tokens');
+  if (verify && typeof verify === 'string') {
+    console.log("[AUTH] Verification read back: OK");
+    console.log("[AUTH] Saved value preview:", verify.substring(0, 200) + "...");
+  } else {
+    console.log("[AUTH] Verification read back: FAILED - value:", verify);
+  }
+} else {
+  console.warn("[AUTH] Redis unavailable - tokens only in memory");
+}
 
     return accessToken;
   } catch (err) {
