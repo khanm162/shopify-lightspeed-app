@@ -28,25 +28,25 @@
     .header {
       background: #000;
       color: white;
-      padding: 8px 12px;
+      padding: 10px 15px;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
     h1 {
       margin: 0;
-      font-size: 1.1rem;
+      font-size: 1.2rem;
       font-weight: 600;
     }
     .total {
-      font-size: 0.9rem;
+      font-size: 0.95rem;
     }
     .filters {
-      padding: 8px 12px;
+      padding: 10px 15px;
       background: #f9f9f9;
       border-bottom: 1px solid #eee;
       display: flex;
-      gap: 12px;
+      gap: 15px;
       flex-wrap: wrap;
       align-items: center;
     }
@@ -57,10 +57,10 @@
     }
     #search-input {
       width: 100%;
-      padding: 6px 6px 6px 30px;
+      padding: 7px 7px 7px 32px;
       border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 12px;
+      border-radius: 6px;
+      font-size: 13px;
       box-sizing: border-box;
     }
     #search-input:focus {
@@ -69,32 +69,31 @@
     }
     .search-icon {
       position: absolute;
-      left: 8px;
+      left: 10px;
       top: 50%;
       transform: translateY(-50%);
       color: #777;
-      font-size: 12px;
     }
     .date-range {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       align-items: center;
     }
     .date-input {
-      padding: 6px;
+      padding: 7px;
       border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 12px;
-      width: 130px;
+      border-radius: 6px;
+      font-size: 13px;
+      width: 140px;
     }
     .clear-btn {
-      padding: 6px 12px;
+      padding: 7px 14px;
       background: #000;
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 12px;
+      font-size: 13px;
     }
     .clear-btn:hover {
       background: #222;
@@ -159,7 +158,7 @@
     }
     @media (max-width: 992px) {
       table { min-width: 900px; }
-      .filters { flex-direction: column; gap: 8px; }
+      .filters { flex-direction: column; gap: 10px; }
     }
     @media (max-width: 768px) {
       th, td { font-size: 10px; padding: 3px 5px; }
@@ -236,7 +235,7 @@
   </div>
 
   <script>
-    // List.js setup – search all visible columns
+    // List.js setup
     const options = {
       valueNames: [
         'orderNumber',
@@ -246,11 +245,15 @@
         'products',
         'error-msg'
       ],
-      searchClass: 'search'
+      searchClass: 'search',
+      sortClass: 'sort'
     };
     const userList = new List('orders-table', options);
 
-    // Update total orders count on every filter/search change
+    // Default sort: newest on top
+    userList.sort('timestamp', { order: 'desc' });
+
+    // Update total on every filter/sort change
     const totalDisplay = document.getElementById('total-display');
     const originalTotal = <%= totalOrders %>;
 
@@ -261,16 +264,16 @@
 
     userList.on('updated', updateTotal);
     userList.on('searchComplete', updateTotal);
+    userList.on('sortComplete', updateTotal);
 
-    // Initial total
-    updateTotal();
+    updateTotal(); // Initial
 
-    // Live search on input
+    // Live search
     document.getElementById('search-input').addEventListener('input', function() {
       userList.search(this.value);
     });
 
-    // Date range filter with inclusive end date
+    // Date range filter
     flatpickr("#from-date", { dateFormat: "m/d/Y" });
     flatpickr("#to-date", { dateFormat: "m/d/Y" });
 
@@ -299,7 +302,7 @@
     fromInput.addEventListener('change', applyDateFilter);
     toInput.addEventListener('change', applyDateFilter);
 
-    // Clear Filters button
+    // Clear Filters
     document.getElementById('clear-filters').addEventListener('click', function() {
       document.getElementById('search-input').value = '';
       userList.search('');
@@ -308,11 +311,9 @@
       toInput.value = '';
 
       userList.filter(() => true);
+      userList.sort('timestamp', { order: 'desc' }); // Reset to newest first
       updateTotal();
     });
-
-    // Default sort: newest orders on top
-    userList.sort('timestamp', { order: 'desc' });
 
     async function resync(orderId) {
       if (!confirm(`Re-sync order #${orderId}?`)) return;
