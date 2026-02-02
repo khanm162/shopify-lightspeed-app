@@ -237,7 +237,9 @@
     <% } %>
   </div>
 
-  <script>
+<script>
+  console.log("Dashboard script loaded successfully"); // Should appear in console on page load
+
   // List.js setup with date parsing
   const options = {
     valueNames: [
@@ -246,10 +248,9 @@
       {
         name: 'timestamp',
         sort: function(a, b) {
-          // Custom date parser for correct sorting
           const dateA = new Date(a.innerText.trim());
           const dateB = new Date(b.innerText.trim());
-          return dateA - dateB; // ascending by default
+          return dateA - dateB;
         }
       },
       'status',
@@ -260,12 +261,16 @@
     sortClass: 'sort'
   };
 
+  console.log("Initializing List.js...");
   const userList = new List('orders-table', options);
+  console.log("List.js initialized:", userList);
 
-  // Default: newest orders on top (descending timestamp)
+  // Default sort: newest on top
+  console.log("Applying default sort (timestamp desc)...");
   userList.sort('timestamp', { order: 'desc' });
+  console.log("Default sort applied");
 
-  // Update total count on every change
+  // Update total on changes
   const totalDisplay = document.getElementById('total-display');
   const originalTotal = <%= totalOrders %>;
 
@@ -280,12 +285,24 @@
 
   updateTotal();
 
+  // Debug click on headers
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const sortBy = th.getAttribute('data-sort');
+      console.log(`Header clicked: ${sortBy}`);
+      const current = th.classList.contains('asc') ? 'desc' : 'asc';
+      console.log(`Sorting ${sortBy} ${current}`);
+      userList.sort(sortBy, { order: current });
+    });
+  });
+
   // Live search
   document.getElementById('search-input').addEventListener('input', function() {
+    console.log("Search input:", this.value);
     userList.search(this.value);
   });
 
-  // Date range filter (unchanged)
+  // Date range filter
   flatpickr("#from-date", { dateFormat: "m/d/Y" });
   flatpickr("#to-date", { dateFormat: "m/d/Y" });
 
@@ -293,6 +310,7 @@
   const toInput = document.getElementById('to-date');
 
   function applyDateFilter() {
+    console.log("Date filter applied");
     const fromStr = fromInput.value.trim();
     const toStr = toInput.value.trim();
 
@@ -316,6 +334,7 @@
 
   // Clear Filters
   document.getElementById('clear-filters').addEventListener('click', function() {
+    console.log("Clear Filters clicked");
     document.getElementById('search-input').value = '';
     userList.search('');
 
@@ -323,7 +342,7 @@
     toInput.value = '';
 
     userList.filter(() => true);
-    userList.sort('timestamp', { order: 'desc' }); // Reset to newest first
+    userList.sort('timestamp', { order: 'desc' });
     updateTotal();
   });
 
@@ -345,6 +364,8 @@
       alert('Network error: ' + err.message);
     }
   }
+
+  console.log("All event listeners attached");
 </script>
 </body>
 </html>
