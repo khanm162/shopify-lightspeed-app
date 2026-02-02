@@ -17,7 +17,7 @@
       color: #000;
       font-size: 13px;
     }
-    .container {
+    @media (min-width: 768px) {.container {
       max-width: 1400px;
       margin: 0 auto;
       background: #FAF9F6;
@@ -25,6 +25,19 @@
       overflow: hidden;
 	  padding: 10px;
     }
+	.products {
+      line-height: 2.1;
+      white-space: nowrap;
+    }}
+	@media (max-width: 768px) {.container {
+      margin: 0 auto;
+      background: #FAF9F6;
+      box-shadow: 0 2px 14px rgb(0 0 0 / 69%);
+      overflow: hidden;
+    }.products {
+      line-height: 1.5;
+      white-space: normal;
+    }}
     .header {
       background: #000;
       color: white;
@@ -113,7 +126,7 @@
     th, td {
       padding: 4px 6px;
       text-align: left;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid cyan;
       vertical-align: middle;
     }
     th {
@@ -137,10 +150,6 @@
     .status-success { color: #006400; }
     .status-failed { color: #8B0000; }
     .status-skipped { color: #8B4513; }
-    .products {
-      line-height: 2.1;
-      white-space: nowrap;
-    }
     .error-msg {
       color: #8B0000;
       max-width: 220px;
