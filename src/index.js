@@ -140,11 +140,25 @@ app.get("/dashboard", async (req, res) => {
 
 // Sort newest first (descending timestamp)
 // Sort newest first (descending timestamp) - safe version
+// Sort newest first - robust parsing for "M/D/YYYY, h:mm AM/PM" format
 enhancedOrders.sort((a, b) => {
-  const timeA = new Date(a.timestamp || a.created_at || 0).getTime();
-  const timeB = new Date(b.timestamp || b.created_at || 0).getTime();
+  let tsA = a.timestamp || a.created_at || '1970-01-01';
+  let tsB = b.timestamp || b.created_at || '1970-01-01';
+
+  // Remove comma and make format consistent: "M/D/YYYY h:mm AM/PM" → parsable
+  tsA = tsA.replace(',', '');
+  tsB = tsB.replace(',', '');
+
+  const dateA = new Date(tsA);
+  const dateB = new Date(tsB);
+
+  // Fallback if invalid
+  const timeA = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
+  const timeB = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
+
   return timeB - timeA; // newest first
 });
+
 total = enhancedOrders.length;
 console.log(`[DASHBOARD] Rendered ${total} sorted orders (newest first)`);
 
