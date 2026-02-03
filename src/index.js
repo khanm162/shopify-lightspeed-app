@@ -169,19 +169,19 @@ app.post("/resync/:orderId", async (req, res) => {
     // Load all failed items from Redis (instead of memory)
     const queued = await redis.lrange('failed_queue', 0, -1) || [];
     let failedItem = null;
-
-    for (const item of queued) {
-      try {
-        const parsed = JSON.parse(item);
-        if (parsed.shopifyOrderId === orderId) {
-          failedItem = parsed;
-          break;
-        }
-      } catch (e) {
-        console.error("[RESYNC] Skipping corrupted item in queue:", item.substring(0, 200));
-        await redis.lrem('failed_queue', 1, item); // auto-remove bad items
-      }
+for (const item of queued) {
+  let parsed;
+  try {
+    parsed = typeof item === 'object' && item !== null ? item : JSON.parse(item);
+    if (parsed.shopifyOrderId === orderId) {
+      failedItem = parsed;
+      break;
     }
+  } catch (e) {
+    console.error("[RESYNC] Skipping corrupted item (type:", typeof item, "):", e.message);
+    await redis.lrem('failed_queue', 1, item);
+  }
+}
 
     if (!failedItem) {
       console.log("[RESYNC] Order not found in Redis failed_queue");
@@ -298,6 +298,17 @@ app.get("/cron/retry-failed", async (req, res) => {
   console.error(`[RETRY-CRON] Failed for #${data.shopifyOrderId}:`, retryErr.message);
   data.retryCount = (data.retryCount || 0) + 1;
   await redis.lrem('failed_queue', 1, item);
+  // Prevent duplicate push
+const existing = await redis.lrange('failed_queue', 0, -1);
+if (existing.some(i => {
+  try {
+    const parsed = JSON.parse(i);
+    return parsed.shopifyOrderId === data.shopifyOrderId;
+  } catch { return false; }
+})) {
+  console.log(`[RETRY-CRON] Skipping duplicate push for #${data.shopifyOrderId}`);
+  continue;
+}
   await redis.lpush('failed_queue', JSON.stringify(data));
 }
     }
