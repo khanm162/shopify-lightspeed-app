@@ -225,7 +225,7 @@ app.post("/resync/:orderId", async (req, res) => {
 app.get("/refresh-token", async (req, res) => {
   console.log(`[TOKEN-CRON] Refresh called at ${new Date().toISOString()}`);
   try {
-    const isValid = hasValidToken();
+    const isValid = await hasValidToken(); // ← add await
     console.log(`[TOKEN-CRON] Token valid? ${isValid}`);
     if (!isValid) {
       console.log("[TOKEN-CRON] Refreshing token...");
@@ -332,8 +332,14 @@ app.post("/webhooks/orders-create", async (req, res) => {
   const order = req.body;
   if (processedOrders.has(order.id)) return res.status(200).send("OK");
   processedOrders.add(order.id);
-  if (!hasValidToken()) {
-    console.log("⏳ Lightspeed token not ready yet. Skipping order.");
+  if (!(await hasValidToken())) {  // ← add await
+  console.log("[WEBHOOK] Token not ready - attempting auto-refresh...");
+  try {
+    await refreshAccessToken();
+    console.log("[WEBHOOK] Token refreshed successfully - retrying sync");
+  } catch (refreshErr) {
+    console.error("[WEBHOOK] Auto-refresh failed:", refreshErr.message);
+    // Only skip if refresh really failed
     const skipInfo = {
       shopifyOrderId: order.id,
       shopDomain,
@@ -341,20 +347,21 @@ app.post("/webhooks/orders-create", async (req, res) => {
       timestamp: new Date().toISOString(),
       status: "skipped",
       products: order.line_items?.map(i => ({ sku: i.sku?.trim(), quantity: i.quantity })) || [],
-      errorMessage: "Lightspeed token not ready",
-      errorDetails: "Token expired or missing — cron refresh should handle",
+      errorMessage: "Lightspeed token not ready after refresh attempt",
+      errorDetails: refreshErr.message || "Token expired or missing",
       retryCount: 0,
       saleLines: []
     };
     orderLogs.push(skipInfo);
-if (redis) {
-  const stringified = safeStringify(skipInfo);
-  console.log("[WEBHOOK] Saving skip log:", stringified.substring(0, 200));
-  await redis.lpush('order_history', stringified);
-  await redis.lpush('failed_queue', stringified);
-}
-return res.status(200).send("OK");
+    if (redis) {
+      const stringified = safeStringify(skipInfo);
+      console.log("[WEBHOOK] Saving skip log:", stringified.substring(0, 200));
+      await redis.lpush('order_history', stringified);
+      await redis.lpush('failed_queue', stringified);
+    }
+    return res.status(200).send("OK");
   }
+}
   try {
     console.log(`📦 Processing Shopify order #${order.id} from ${shopDomain} - Total: $${order.total_price}`);
     const saleLines = [];

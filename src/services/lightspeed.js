@@ -54,26 +54,20 @@ async function exchangeCodeForToken(code) {
 
     accessToken = res.data.access_token;
     refreshToken = res.data.refresh_token;
-
     console.log("[AUTH] Tokens received - accessToken length:", accessToken?.length || 0);
     console.log("[AUTH] Refresh token length:", refreshToken?.length || "MISSING!");
 
     if (redisAvailable) {
-  const payload = JSON.stringify({ accessToken, refreshToken });
-  await redis.set('lightspeed_tokens', payload);
-  console.log("[AUTH] Tokens saved to Redis - payload length:", payload.length);
-
-  // Safe verification
-  const verify = await redis.get('lightspeed_tokens');
-  if (verify && typeof verify === 'string') {
-    console.log("[AUTH] Verification read back: OK");
-    console.log("[AUTH] Saved value preview:", verify.substring(0, 200) + "...");
-  } else {
-    console.log("[AUTH] Verification read back: FAILED - value:", verify);
-  }
-} else {
-  console.warn("[AUTH] Redis unavailable - tokens only in memory");
-}
+      const payload = JSON.stringify({ accessToken, refreshToken });
+      console.log("[AUTH] Stringified payload preview:", payload.substring(0, 200) + "...");
+      await redis.set('lightspeed_tokens', payload);
+      console.log("[AUTH] Tokens saved to Redis - payload length:", payload.length);
+      // Verify
+      const verify = await redis.get('lightspeed_tokens');
+      console.log("[AUTH] Verification read back:", verify ? "OK" : "FAILED");
+    } else {
+      console.warn("[AUTH] Redis unavailable - tokens only in memory");
+    }
 
     return accessToken;
   } catch (err) {
@@ -88,7 +82,6 @@ async function exchangeCodeForToken(code) {
 
 async function refreshAccessToken() {
   console.log("[REFRESH] Starting... Current refreshToken:", refreshToken ? "present (len:" + refreshToken.length + ")" : "missing");
-
   if (!refreshToken) {
     await loadTokens();
     console.log("[REFRESH] After load - refreshToken:", refreshToken ? "present (len:" + refreshToken.length + ")" : "still missing");
@@ -111,12 +104,12 @@ async function refreshAccessToken() {
     );
 
     accessToken = res.data.access_token;
-    refreshToken = res.data.refresh_token || refreshToken; // Keep old if not returned
-
+    refreshToken = res.data.refresh_token || refreshToken;
     console.log("[REFRESH] New accessToken received - length:", accessToken.length);
 
     if (redisAvailable) {
       const payload = JSON.stringify({ accessToken, refreshToken });
+      console.log("[REFRESH] Stringified payload preview:", payload.substring(0, 200) + "...");
       await redis.set('lightspeed_tokens', payload);
       console.log("[REFRESH] New tokens saved to Redis");
       // Verify
@@ -137,24 +130,28 @@ async function refreshAccessToken() {
 
 async function loadTokens() {
   if (!redisAvailable) {
-    console.warn("[LOAD] Redis not available - skipping token load");
-    return;
+    console.warn("[LOAD] Redis not available - cannot load tokens");
+    return false;
   }
 
-  const saved = await redis.get('lightspeed_tokens');
+  let saved = await redis.get('lightspeed_tokens');
   console.log("[LOAD] Raw Redis value for lightspeed_tokens:", saved || "null/empty");
 
-  if (saved) {
+  if (saved && typeof saved === 'object') {
+    console.warn("[LOAD] Raw value is object - stringifying it");
+    saved = JSON.stringify(saved); // Fix if object was saved
+  }
+
+  if (saved && typeof saved === 'string') {
     try {
       const tokens = JSON.parse(saved);
-      if (tokens?.accessToken && tokens?.refreshToken) {
+      if (tokens.accessToken && tokens.refreshToken) {
         accessToken = tokens.accessToken;
         refreshToken = tokens.refreshToken;
         console.log("[LOAD] Success - tokens loaded from Redis");
-        console.log("[LOAD] Access token length:", accessToken.length);
-        console.log("[LOAD] Refresh token length:", refreshToken.length);
+        return true;
       } else {
-        console.warn("[LOAD] Invalid token structure - deleting key");
+        console.warn("[LOAD] Invalid structure - deleting key");
         await redis.del('lightspeed_tokens');
       }
     } catch (err) {
@@ -165,6 +162,7 @@ async function loadTokens() {
   } else {
     console.warn("[LOAD] No tokens in Redis - re-auth required");
   }
+  return false;
 }
 
 loadTokens(); // Load on startup
@@ -174,8 +172,28 @@ function authHeader() {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
-function hasValidToken() {
-  return !!accessToken;
+async function hasValidToken() {
+  if (!!accessToken) {
+    console.log("[TOKEN] Valid token found in memory");
+    return true;
+  }
+
+  console.log("[TOKEN] No token in memory - attempting load/refresh...");
+  const loaded = await loadTokens();
+  if (loaded) {
+    console.log("[TOKEN] Token loaded successfully");
+    return true;
+  }
+
+  // If load failed, try refresh
+  try {
+    await refreshAccessToken();
+    console.log("[TOKEN] Token refreshed successfully");
+    return true;
+  } catch (err) {
+    console.error("[TOKEN] Auto-refresh failed:", err.message);
+    return false;
+  }
 }
 
 /* =========================
