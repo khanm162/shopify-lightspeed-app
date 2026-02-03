@@ -281,19 +281,25 @@ app.get("/cron/retry-failed", async (req, res) => {
       }
 
       try {
-        await createSale({
-          saleLines: data.saleLines || [],
-          customerID: Number(data.lsCustomerID)
-        });
-        console.log(`[RETRY-CRON] Success for #${data.shopifyOrderId}`);
-        await redis.lrem('failed_queue', 1, item);
-        failedOrders = failedOrders.filter(f => f.shopifyOrderId !== data.shopifyOrderId);
-      } catch (retryErr) {
-        console.error(`[RETRY-CRON] Failed for #${data.shopifyOrderId}:`, retryErr.message);
-        data.retryCount = (data.retryCount || 0) + 1;
-        await redis.lrem('failed_queue', 1, item);
-        await redis.lpush('failed_queue', JSON.stringify(data));
-      }
+  const saleLines = data.saleLines || [];
+  if (saleLines.length === 0) {
+    throw new Error("No sale lines available - cannot sync empty sale");
+  }
+
+  await createSale({
+    saleLines,
+    customerID: Number(data.lsCustomerID)
+  });
+
+  console.log(`[RETRY-CRON] Success for #${data.shopifyOrderId}`);
+  await redis.lrem('failed_queue', 1, item);
+  failedOrders = failedOrders.filter(f => f.shopifyOrderId !== data.shopifyOrderId);
+} catch (retryErr) {
+  console.error(`[RETRY-CRON] Failed for #${data.shopifyOrderId}:`, retryErr.message);
+  data.retryCount = (data.retryCount || 0) + 1;
+  await redis.lrem('failed_queue', 1, item);
+  await redis.lpush('failed_queue', JSON.stringify(data));
+}
     }
 
     res.send(`Processed ${queued.length} queued retries`);
