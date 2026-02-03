@@ -60,7 +60,6 @@ async function loadOrdersFromRedis() {
         catch (e) { console.error("Startup corrupted:", item.substring(0, 200)); return null; }
       })
       .filter(Boolean)
-      .reverse();
     const savedFailed = await redis.lrange('failed_queue', 0, -1) || [];
     failedOrders = savedFailed
       .map(item => {
@@ -72,7 +71,6 @@ async function loadOrdersFromRedis() {
         catch (e) { console.error("Startup failed corrupted:", item.substring(0, 200)); return null; }
       })
       .filter(Boolean)
-      .reverse();
     console.log(`Startup load: ${orderLogs.length} orders, ${failedOrders.length} failed`);
   } catch (err) {
     console.error("Startup Redis load failed:", err.message);
