@@ -27,8 +27,8 @@
         padding: 10px;
       }
       .products {
-        line-height: 1.5;
-        white-space: normal;
+        line-height: 1.1;
+        white-space: nowrap;
       }
     }
     @media (max-width: 768px) {
@@ -39,7 +39,7 @@
         overflow: hidden;
       }
       .products {
-        line-height: 1.5;
+        line-height: 1.1;
         white-space: normal;
       }
     }
@@ -127,31 +127,33 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 11px;
-      table-layout: fixed; /* prevents column width jumping */
+      table-layout: auto; /* allow columns to size based on content */
     }
     th, td {
-      padding: 6px 8px; /* slightly more readable but still compact */
+      padding: 3px 6px; /* reduced vertical space */
       text-align: left;
       border-bottom: 1px solid cyan;
       vertical-align: middle;
       overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
-	thead {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: #000;
-}
-    thead th {
-      background: #000;
+    thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #000; /* force solid background */
+    }
+    th {
+      background: #000 !important;
       color: white;
       font-weight: 600;
       cursor: pointer;
       position: sticky;
       top: 0;
-      z-index: 10; /* higher than before to stay above content */
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* subtle shadow for visibility */
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* floating effect */
+      white-space: nowrap;
     }
     th:hover {
       background: #111;
@@ -169,6 +171,7 @@
     }
     .status {
       font-weight: 600;
+      white-space: nowrap;
     }
     .status-success { color: #006400; }
     .status-failed { color: #8B0000; }
@@ -176,21 +179,28 @@
     .products {
       line-height: 1.1;
       font-size: 11px;
+      white-space: pre-wrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .error-msg {
       color: #8B0000;
-      max-width: 220px;
+      max-width: 180px;
       word-break: break-word;
       font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .action-btn {
-      padding: 4px 8px;
+      padding: 3px 6px;
       background: #000;
       color: white;
       border: none;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 11px;
+      font-size: 10px;
+      white-space: nowrap;
     }
     .action-btn:hover {
       background: #222;
@@ -209,7 +219,7 @@
       }
     }
     @media (max-width: 768px) {
-      th, td { font-size: 10px; padding: 4px 6px; }
+      th, td { font-size: 10px; padding: 3px 4px; }
       .date-range { flex-direction: column; gap: 6px; }
     }
   </style>
@@ -362,7 +372,7 @@
       updateTotal();
     });
 
-    // Manual sorting toggle with debug (fallback if List.js native toggle fails)
+    // Manual sorting toggle with debug
     document.querySelectorAll('th[data-sort]').forEach(th => {
       th.addEventListener('click', () => {
         const field = th.getAttribute('data-sort');
@@ -374,7 +384,6 @@
         console.log(`Sorting ${field} ${order}`);
         userList.sort(field, { order });
 
-        // Visual arrow feedback
         th.classList.remove('asc', 'desc');
         th.classList.add(order);
       });
