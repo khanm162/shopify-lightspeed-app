@@ -174,7 +174,7 @@ function authHeader() {
 
 async function hasValidToken() {
   if (!!accessToken) {
-    console.log("[TOKEN] Valid token found in memory");
+    console.log("[TOKEN] Valid token Found in memory");
     return true;
   }
 

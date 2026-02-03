@@ -231,7 +231,7 @@ app.get("/refresh-token", async (req, res) => {
       console.log("[TOKEN-CRON] Refreshing token...");
       await refreshAccessToken();
       console.log("[TOKEN-CRON] Refresh SUCCESS");
-      res.send("Token refreshed successfully");
+      res.send("Token Refreshed Successfully");
     } else {
       console.log("[TOKEN-CRON] Token still valid");
       res.send("Token still valid");
