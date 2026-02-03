@@ -141,8 +141,12 @@ app.get("/dashboard", async (req, res) => {
 }));
 
 // Sort newest first (descending timestamp)
-enhancedOrders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
+// Sort newest first (descending timestamp) - safe version
+enhancedOrders.sort((a, b) => {
+  const timeA = new Date(a.timestamp || a.created_at || 0).getTime();
+  const timeB = new Date(b.timestamp || b.created_at || 0).getTime();
+  return timeB - timeA; // newest first
+});
 total = enhancedOrders.length;
 console.log(`[DASHBOARD] Rendered ${total} sorted orders (newest first)`);
 
