@@ -410,6 +410,12 @@
     }
 
     console.log("All event listeners attached");
+	
+	// Auto-refresh page every 60 seconds to show new orders at top
+setInterval(() => {
+  console.log("Auto-refreshing dashboard to check for new orders...");
+  location.reload();
+}, 60000);
   </script>
 </body>
 </html>
