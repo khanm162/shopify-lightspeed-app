@@ -378,23 +378,33 @@ console.log("Default sort applied on created_at_unix");
   });
 
   // Manual sorting toggle with debug
-  document.querySelectorAll('th[data-sort]').forEach(th => {
+ // Manual sorting toggle - redirect timestamp column to created_at_unix
+document.querySelectorAll('th[data-sort]').forEach(th => {
   th.addEventListener('click', () => {
     let field = th.getAttribute('data-sort');
     console.log(`Clicked header: ${field}`);
+
+    // Redirect "timestamp" column to sort by the numeric unix field
+    if (field === 'timestamp') {
+      field = 'created_at_unix';
+      console.log("Redirected timestamp sort to created_at_unix");
+    }
 
     const isAsc = th.classList.contains('asc');
     const order = isAsc ? 'desc' : 'asc';
 
     console.log(`Sorting ${field} ${order}`);
 
-    // Use created_at_unix for timestamp column
-    if (field === 'timestamp') field = 'created_at_unix';
-
     userList.sort(field, { order });
 
+    // Update visual arrow
     th.classList.remove('asc', 'desc');
     th.classList.add(order);
+
+    // Optional: Update other headers' arrows if needed
+    document.querySelectorAll('th').forEach(other => {
+      if (other !== th) other.classList.remove('asc', 'desc');
+    });
   });
 });
 
