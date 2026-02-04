@@ -264,12 +264,13 @@
               <td class="orderNumber"><%= o.name || o.orderNumber || o.shopifyOrderId || '-' %></td>
               <td class="storeName"><%= o.storeName || o.shopDomain || 'Unknown' %></td>
               <td class="timestamp">
-                <%= new Date(o.timestamp).toLocaleString('en-US', { 
-                  timeZone: 'America/New_York',
-                  month: 'numeric', day: 'numeric', year: 'numeric',
-                  hour: 'numeric', minute: '2-digit', hour12: true 
-                }) %>
-              </td>
+  <%= new Date(o.timestamp).toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    month: 'numeric', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true 
+  }) %>
+</td>
+<td class="created_at_unix" style="display: none;"><%= o.created_at_unix || 0 %></td>  <!-- ← add this -->
               <td class="status <%= o.status %>">
                 <i class="fas fa-<%= o.status === 'success' ? 'check-circle' : 'exclamation-circle' %>"></i>
                 <%= o.status %>
