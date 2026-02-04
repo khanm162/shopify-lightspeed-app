@@ -384,7 +384,7 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
     const field = th.getAttribute('data-sort');
     console.log(`Clicked header: ${field}`);
 
-   if (field === 'timestamp') {
+ if (field === 'timestamp') {
   console.log("Manual DOM sort for timestamp");
 
   const isAsc = th.classList.contains('asc');
@@ -392,30 +392,39 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
 
   console.log(`Sorting timestamp ${order}`);
 
-  // Get current tbody
-  const oldTbody = document.querySelector('#orders-table tbody');
+  // Step 1: Get current table and tbody
+  const table = document.querySelector('#orders-table');
+  const oldTbody = table.querySelector('tbody');
 
-  // Create a new tbody (this forces browser to treat it as fresh)
+  // Step 2: Create a completely new tbody
   const newTbody = document.createElement('tbody');
-  newTbody.className = 'list'; // keep List.js class
+  newTbody.className = 'list';
 
-  // Get rows from old tbody
+  // Step 3: Get rows and sort them
   const rows = Array.from(oldTbody.querySelectorAll('tr'));
-
-  // Sort rows by data-unix
   rows.sort((a, b) => {
     const unixA = parseInt(a.getAttribute('data-unix') || 0);
     const unixB = parseInt(b.getAttribute('data-unix') || 0);
     return order === 'asc' ? unixA - unixB : unixB - unixA;
   });
 
-  // Append sorted rows to new tbody
-  rows.forEach(row => newTbody.appendChild(row.cloneNode(true)));
+  // Step 4: Append sorted rows to new tbody (use cloneNode for safety)
+  const fragment = document.createDocumentFragment();
+  rows.forEach(row => fragment.appendChild(row.cloneNode(true)));
+  newTbody.appendChild(fragment);
 
-  // Replace old tbody with new one (forces full redraw)
+  // Step 5: Replace old tbody with new one
   oldTbody.parentNode.replaceChild(newTbody, oldTbody);
 
-  // Update arrow
+  // Step 6: Force multiple reflows (this is what fixes asc visual update)
+  table.style.display = 'none';
+  table.offsetHeight; // trigger reflow 1
+  table.style.display = '';
+  table.style.display = 'none';
+  table.offsetHeight; // trigger reflow 2
+  table.style.display = '';
+
+  // Step 7: Update arrow
   th.classList.remove('asc', 'desc');
   th.classList.add(order);
 
@@ -424,10 +433,7 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
     if (other !== th) other.classList.remove('asc', 'desc');
   });
 
-  // Force browser reflow
-  document.body.offsetHeight;
-
-  // Scroll to top
+  // Step 8: Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
   return;
