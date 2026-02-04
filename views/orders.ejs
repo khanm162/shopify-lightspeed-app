@@ -27,8 +27,8 @@
         padding: 10px;
       }
       .products {
-        line-height: 1.5;
-        white-space: normal;
+        line-height: 1.1;
+        white-space: nowrap;
       }
     }
     @media (max-width: 768px) {
@@ -39,7 +39,7 @@
         overflow: hidden;
       }
       .products {
-        line-height: 1.5;
+        line-height: 1.1;
         white-space: normal;
       }
     }
@@ -127,31 +127,33 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 11px;
-      table-layout: fixed; /* prevents column width jumping */
+      table-layout: auto; /* allow columns to size based on content */
     }
     th, td {
-      padding: 6px 8px; /* slightly more readable but still compact */
+      padding: 3px 6px; /* reduced vertical space */
       text-align: left;
       border-bottom: 1px solid cyan;
       vertical-align: middle;
       overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
     thead {
       position: sticky;
       top: 0;
       z-index: 10;
-      background: #000;
+      background: #000; /* force solid background */
     }
-    thead th {
-      background: #000;
+    th {
+      background: #000 !important;
       color: white;
       font-weight: 600;
       cursor: pointer;
       position: sticky;
       top: 0;
-      z-index: 10; /* higher than before to stay above content */
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* subtle shadow for visibility */
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* floating effect */
+      white-space: nowrap;
     }
     th:hover {
       background: #111;
@@ -169,6 +171,7 @@
     }
     .status {
       font-weight: 600;
+      white-space: nowrap;
     }
     .status-success { color: #006400; }
     .status-failed { color: #8B0000; }
@@ -176,21 +179,27 @@
     .products {
       line-height: 1.1;
       font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .error-msg {
       color: #8B0000;
-      max-width: 220px;
+      max-width: 180px;
       word-break: break-word;
       font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .action-btn {
-      padding: 4px 8px;
+      padding: 3px 6px;
       background: #000;
       color: white;
       border: none;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 11px;
+      font-size: 10px;
+      white-space: nowrap;
     }
     .action-btn:hover {
       background: #222;
@@ -209,7 +218,7 @@
       }
     }
     @media (max-width: 768px) {
-      th, td { font-size: 10px; padding: 3px 5px; }
+      th, td { font-size: 10px; padding: 3px 4px; }
       .date-range { flex-direction: column; gap: 6px; }
     }
   </style>
@@ -220,6 +229,7 @@
       <h1>Order Sync Dashboard</h1>
       <div class="total" id="total-display">Total Orders: <%= totalOrders %></div>
     </div>
+
     <div class="filters">
       <div class="search-wrapper">
         <i class="fas fa-search search-icon"></i>
@@ -231,9 +241,11 @@
       </div>
       <button class="clear-btn" id="clear-filters">Clear Filters</button>
     </div>
+
     <% if (orders.length === 0) { %>
       <div class="empty">No orders found yet.</div>
     <% } else { %>
+	<div style="max-height: 80vh; overflow-y: auto;">
       <table id="orders-table">
         <thead>
           <tr>
@@ -277,101 +289,131 @@
           <% }); %>
         </tbody>
       </table>
+	  </div>
     <% } %>
   </div>
+
   <script>
-    console.log("Dashboard script loaded successfully");
-    const userList = new List('orders-table', {
-      valueNames: ['orderNumber', 'storeName', 'timestamp', 'status', 'products', 'error-msg'],
-      searchClass: 'search',
-      sortClass: 'sort'
+  console.log("Dashboard script loaded successfully");
+
+  const userList = new List('orders-table', {
+    valueNames: ['orderNumber', 'storeName', 'timestamp', 'status', 'products', 'error-msg'],
+    searchClass: 'search',
+    sortClass: 'sort'
+  });
+  console.log("List.js initialized");
+
+  // Default: newest first
+  userList.sort('timestamp', { order: 'desc' });
+  console.log("Default sort applied");
+
+  // IMPORTANT: Force List.js to re-render the table after sort
+  userList.reIndex();   // ← added
+  userList.update();    // ← added - this updates the visible DOM
+
+  // Update total
+  const totalDisplay = document.getElementById('total-display');
+  const originalTotal = <%= totalOrders %>;
+
+  function updateTotal() {
+    const visibleCount = userList.visibleItems.length;
+    totalDisplay.textContent = `Total Orders: ${visibleCount} (of ${originalTotal})`;
+  }
+
+  userList.on('updated', updateTotal);
+  userList.on('searchComplete', updateTotal);
+  userList.on('sortComplete', updateTotal);
+
+  updateTotal();
+
+  // Search
+  document.getElementById('search-input').addEventListener('input', function() {
+    userList.search(this.value);
+  });
+
+  // Date filter
+  flatpickr("#from-date", { dateFormat: "m/d/Y" });
+  flatpickr("#to-date", { dateFormat: "m/d/Y" });
+
+  const fromInput = document.getElementById('from-date');
+  const toInput = document.getElementById('to-date');
+
+  function applyDateFilter() {
+    const fromStr = fromInput.value.trim();
+    const toStr = toInput.value.trim();
+
+    let from = fromStr ? new Date(fromStr) : null;
+    let to = toStr ? new Date(toStr) : null;
+
+    if (from) from.setHours(0, 0, 0, 0);
+    if (to) to.setHours(23, 59, 59, 999);
+
+    userList.filter(item => {
+      const tsStr = (item.values().timestamp || '').trim();
+      if (!tsStr) return true;
+
+      const ts = new Date(tsStr);
+      if (isNaN(ts.getTime())) return true;
+
+      if (from && ts < from) return false;
+      if (to && ts > to) return false;
+      return true;
     });
-    console.log("List.js initialized");
-    // Default: newest first
+  }
+
+  fromInput.addEventListener('change', applyDateFilter);
+  toInput.addEventListener('change', applyDateFilter);
+
+  // Clear Filters
+  document.getElementById('clear-filters').addEventListener('click', function() {
+    document.getElementById('search-input').value = '';
+    userList.search('');
+
+    fromInput.value = '';
+    toInput.value = '';
+
+    userList.filter(() => true);
     userList.sort('timestamp', { order: 'desc' });
-    console.log("Default sort applied");
-    // Update total
-    const totalDisplay = document.getElementById('total-display');
-    const originalTotal = <%= totalOrders %>;
-    function updateTotal() {
-      const visibleCount = userList.visibleItems.length;
-      totalDisplay.textContent = `Total Orders: ${visibleCount} (of ${originalTotal})`;
-    }
-    userList.on('updated', updateTotal);
-    userList.on('searchComplete', updateTotal);
-    userList.on('sortComplete', updateTotal);
     updateTotal();
-    // Search
-    document.getElementById('search-input').addEventListener('input', function() {
-      userList.search(this.value);
+  });
+
+  // Manual sorting toggle with debug
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const field = th.getAttribute('data-sort');
+      console.log(`Clicked header: ${field}`);
+
+      const isAsc = th.classList.contains('asc');
+      const order = isAsc ? 'desc' : 'asc';
+
+      console.log(`Sorting ${field} ${order}`);
+      userList.sort(field, { order });
+
+      th.classList.remove('asc', 'desc');
+      th.classList.add(order);
     });
-    // Date filter
-    flatpickr("#from-date", { dateFormat: "m/d/Y" });
-    flatpickr("#to-date", { dateFormat: "m/d/Y" });
-    const fromInput = document.getElementById('from-date');
-    const toInput = document.getElementById('to-date');
-    function applyDateFilter() {
-      const fromStr = fromInput.value.trim();
-      const toStr = toInput.value.trim();
-      let from = fromStr ? new Date(fromStr) : null;
-      let to = toStr ? new Date(toStr) : null;
-      if (from) from.setHours(0, 0, 0, 0);
-      if (to) to.setHours(23, 59, 59, 999);
-      userList.filter(item => {
-        const tsStr = (item.values().timestamp || '').trim();
-        if (!tsStr) return true;
-        const ts = new Date(tsStr);
-        if (isNaN(ts.getTime())) return true;
-        if (from && ts < from) return false;
-        if (to && ts > to) return false;
-        return true;
+  });
+
+  async function resync(orderId) {
+    if (!confirm(`Re-sync order #${orderId}?`)) return;
+    try {
+      const res = await fetch(`/resync/${orderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
       });
-    }
-    fromInput.addEventListener('change', applyDateFilter);
-    toInput.addEventListener('change', applyDateFilter);
-    // Clear Filters
-    document.getElementById('clear-filters').addEventListener('click', function() {
-      document.getElementById('search-input').value = '';
-      userList.search('');
-      fromInput.value = '';
-      toInput.value = '';
-      userList.filter(() => true);
-      userList.sort('timestamp', { order: 'desc' });
-      updateTotal();
-    });
-    // Manual sorting toggle with debug (fallback if List.js native toggle fails)
-    document.querySelectorAll('th[data-sort]').forEach(th => {
-      th.addEventListener('click', () => {
-        const field = th.getAttribute('data-sort');
-        console.log(`Clicked header: ${field}`);
-        const isAsc = th.classList.contains('asc');
-        const order = isAsc ? 'desc' : 'asc';
-        console.log(`Sorting ${field} ${order}`);
-        userList.sort(field, { order });
-        // Visual arrow feedback
-        th.classList.remove('asc', 'desc');
-        th.classList.add(order);
-      });
-    });
-    async function resync(orderId) {
-      if (!confirm(`Re-sync order #${orderId}?`)) return;
-      try {
-        const res = await fetch(`/resync/${orderId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        const text = await res.text();
-        if (res.ok) {
-          alert('Re-sync successful!');
-          location.reload();
-        } else {
-          alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
-        }
-      } catch (err) {
-        alert('Network error: ' + err.message);
+      const text = await res.text();
+      if (res.ok) {
+        alert('Re-sync successful!');
+        location.reload();
+      } else {
+        alert('Re-sync failed: ' + (text.length < 200 ? text : text.substring(0, 200) + '...'));
       }
+    } catch (err) {
+      alert('Network error: ' + err.message);
     }
-    console.log("All event listeners attached");
-  </script>
+  }
+
+  console.log("All event listeners attached");
+</script>
 </body>
 </html>
