@@ -251,12 +251,7 @@
           <tr>
             <th data-sort="orderNumber">Order # <i class="fas fa-sort"></i></th>
             <th data-sort="storeName">Store Name <i class="fas fa-sort"></i></th>
-            <th>
-  <a href="?sort=<%= currentSort === 'asc' ? 'desc' : 'asc' %>" style="color: white; text-decoration: none;">
-    Timestamp (EST)
-    <i class="fas fa-sort<%= currentSort === 'asc' ? '-up' : '-down' %>"></i>
-  </a>
-</th>
+            <th data-sort="timestamp">Timestamp (EST) <i class="fas fa-sort"></i></th>
             <th data-sort="status">Status <i class="fas fa-sort"></i></th>
             <th>Products (Title + SKU × Qty)</th>
             <th>Error Message</th>
