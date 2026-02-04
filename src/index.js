@@ -81,15 +81,14 @@ loadOrdersFromRedis();
 app.set('view engine', 'ejs');
 app.set('views', path.join(process.cwd(), 'views'));
 // Dashboard
+// Dashboard
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
-
   if (!redis) {
     console.warn("Redis unavailable - dashboard empty");
     return res.render('orders', { totalOrders: 0, orders: [] });
   }
-
   try {
     const storeNameMap = {};
     for (const key in process.env) {
@@ -99,10 +98,8 @@ app.get("/dashboard", async (req, res) => {
         if (domain) storeNameMap[domain] = process.env[key];
       }
     }
-
     const rawOrders = await redis.lrange('order_history', 0, -1) || [];
     console.log(`[DASHBOARD] Fetched ${rawOrders.length} raw items`);
-
     const orders = rawOrders
       .map((item, idx) => {
         if (item === null || item === undefined) {
@@ -132,28 +129,40 @@ app.get("/dashboard", async (req, res) => {
       .filter(Boolean);
 
     enhancedOrders = orders.map(o => ({
-  ...o,
-  orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
-  storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
-  timestamp: o.timestamp || o.created_at || new Date().toISOString(),
-})
-// Support ?sort=asc or ?sort=desc (default = desc/newest first)
-const sortParam = req.query.sort || 'desc';
+      ...o,
+      orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
+      storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
+      timestamp: o.timestamp || o.created_at || new Date().toISOString(),
+    }));
 
-// Sort using created_at_unix (numeric, reliable)
-enhancedOrders.sort((a, b) => {
-  const unixA = a.created_at_unix || 0;
-  const unixB = b.created_at_unix || 0;
+    // Support ?sort=asc or ?sort=desc (default = desc/newest first)
+    const sortParam = req.query.sort || 'desc';
 
-  if (sortParam === 'asc') {
-    return unixA - unixB; // oldest first
-  } else {
-    return unixB - unixA; // newest first
+    // Sort using created_at_unix (numeric, reliable)
+    enhancedOrders.sort((a, b) => {
+      const unixA = a.created_at_unix || 0;
+      const unixB = b.created_at_unix || 0;
+
+      if (sortParam === 'asc') {
+        return unixA - unixB; // oldest first
+      } else {
+        return unixB - unixA; // newest first
+      }
+    });
+
+    total = enhancedOrders.length;
+    console.log(`[DASHBOARD] Rendered ${total} sorted orders (${sortParam === 'asc' ? 'oldest first' : 'newest first'})`);
+
+    res.render('orders', {
+      totalOrders: total,
+      orders: enhancedOrders,
+      currentSort: sortParam
+    });
+  } catch (err) {
+    console.error("Dashboard load error:", err.message);
+    res.render('orders', { totalOrders: 0, orders: [] });
   }
 });
-
-total = enhancedOrders.length;
-console.log(`[DASHBOARD] Rendered ${total} sorted orders (${sortParam === 'asc' ? 'oldest first' : 'newest first'})`););
 
 // Custom parser for your exact format: "M/D/YYYY, h:mm AM/PM" (EST)
 function parseEST(ts) {
