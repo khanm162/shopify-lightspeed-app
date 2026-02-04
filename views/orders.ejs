@@ -392,23 +392,33 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
 
   console.log(`Sorting timestamp ${order}`);
 
-  // Get tbody and all rows
+  // Get tbody and rows
   const tbody = document.querySelector('#orders-table tbody');
   const rows = Array.from(tbody.querySelectorAll('tr'));
 
-  // Sort rows by data-unix attribute
+  // Sort by data-unix
   rows.sort((a, b) => {
     const unixA = parseInt(a.getAttribute('data-unix') || 0);
     const unixB = parseInt(b.getAttribute('data-unix') || 0);
     return order === 'asc' ? unixA - unixB : unixB - unixA;
   });
 
-  // Clear tbody and re-append rows (use replaceChildren for better reflow)
-  tbody.replaceChildren(...rows);
+  // Create a document fragment (detached from DOM) for clean re-append
+  const fragment = document.createDocumentFragment();
+  rows.forEach(row => fragment.appendChild(row.cloneNode(true))); // clone to avoid issues
 
-  // Alternative if replaceChildren not supported (older browsers):
-  // tbody.innerHTML = '';
-  // rows.forEach(row => tbody.appendChild(row.cloneNode(true)));
+  // Clear tbody
+  while (tbody.firstChild) {
+    tbody.removeChild(tbody.firstChild);
+  }
+
+  // Append sorted rows from fragment
+  tbody.appendChild(fragment);
+
+  // Force browser reflow (critical in some browsers)
+  tbody.style.display = 'none';
+  void tbody.offsetHeight; // trigger reflow
+  tbody.style.display = '';
 
   // Update arrow
   th.classList.remove('asc', 'desc');
@@ -419,15 +429,10 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
     if (other !== th) other.classList.remove('asc', 'desc');
   });
 
-  // Force browser reflow (helps in some cases)
-  tbody.style.display = 'none';
-  tbody.offsetHeight; // trigger reflow
-  tbody.style.display = '';
-
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
-  return; // Done - handled manually
+  return;
 }
 
     // All other columns - use List.js
