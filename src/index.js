@@ -170,15 +170,15 @@ function parseEST(ts) {
 }
 
 // Sort newest first using manual parser
+// Sort newest first using created_at_unix (numeric, reliable)
 enhancedOrders.sort((a, b) => {
-  const timeA = parseEST(a.timestamp || a.created_at);
-  const timeB = parseEST(b.timestamp || b.created_at);
-
-  return timeB - timeA; // newest first
+  const unixA = a.created_at_unix || 0;
+  const unixB = b.created_at_unix || 0;
+  return unixB - unixA; // newer unix = higher number = first
 });
 
 total = enhancedOrders.length;
-console.log(`[DASHBOARD] Rendered ${total} sorted orders (newest first)`);
+console.log(`[DASHBOARD] Rendered ${total} sorted orders (newest first by unix)`);
 
     total = enhancedOrders.length;
     console.log(`[DASHBOARD] Rendered ${total} orders`);
@@ -391,18 +391,20 @@ app.post("/webhooks/orders-create", async (req, res) => {
   } catch (refreshErr) {
     console.error("[WEBHOOK] Auto-refresh failed:", refreshErr.message);
     // Only skip if refresh really failed
-    const skipInfo = {
-      shopifyOrderId: order.id,
-      shopDomain,
-      lsCustomerID,
-      timestamp: new Date().toISOString(),
-      status: "skipped",
-      products: order.line_items?.map(i => ({ sku: i.sku?.trim(), quantity: i.quantity })) || [],
-      errorMessage: "Lightspeed token not ready after refresh attempt",
-      errorDetails: refreshErr.message || "Token expired or missing",
-      retryCount: 0,
-      saleLines: []
-    };
+    const nowUnix = Date.now(); // ← add this
+const skipInfo = {
+  shopifyOrderId: order.id,
+  shopDomain,
+  lsCustomerID,
+  timestamp: new Date().toISOString(),
+  created_at_unix: nowUnix, // ← add this
+  status: "skipped",
+  products: order.line_items?.map(i => ({ sku: i.sku?.trim(), quantity: i.quantity })) || [],
+  errorMessage: "Lightspeed token not ready after refresh attempt",
+  errorDetails: refreshErr.message || "Token expired or missing",
+  retryCount: 0,
+  saleLines: []
+};
     orderLogs.push(skipInfo);
     if (redis) {
       const stringified = safeStringify(skipInfo);
@@ -439,15 +441,18 @@ app.post("/webhooks/orders-create", async (req, res) => {
       customerID: Number(lsCustomerID)
     });
     console.log(`🎉 Sale created successfully for Shopify order #${order.id} from ${shopDomain}`);
-    const successLog = {
+    const nowUnix = Date.now(); // ← add this
+const successLog = {
   shopifyOrderId: order.id,
   name: order.name,
   shopDomain,
   lsCustomerID,
   timestamp: new Date().toISOString(),
+  created_at_unix: nowUnix, // ← add this
   status: "success",
   products,
   lsSaleID: saleResult.saleID || "unknown"
+};eID: saleResult.saleID || "unknown"
 };
 orderLogs.push(successLog);
 if (redis) {
@@ -457,16 +462,18 @@ if (redis) {
 }
 res.status(200).send("OK");
   } catch (err) {
-    const errorInfo = {
-      shopifyOrderId: order.id,
+    const nowUnix = Date.now(); // ← add this
+const errorInfo = {
+  shopifyOrderId: order.id,
   name: order.name,
-      shopDomain,
-      lsCustomerID,
-      timestamp: new Date().toISOString(),
-      errorMessage: err.message,
-      errorDetails: err.response?.data || err.stack || err.toString(),
-      lineItemsCount: order.line_items?.length || 0
-    };
+  shopDomain,
+  lsCustomerID,
+  timestamp: new Date().toISOString(),
+  created_at_unix: nowUnix, // ← add this
+  errorMessage: err.message,
+  errorDetails: err.response?.data || err.stack || err.toString(),
+  lineItemsCount: order.line_items?.length || 0
+};
     failedOrders.push(errorInfo);
     orderLogs.push({
       shopifyOrderId: order.id,
