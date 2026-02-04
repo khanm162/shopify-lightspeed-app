@@ -84,10 +84,12 @@ app.set('views', path.join(process.cwd(), 'views'));
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
+
   if (!redis) {
     console.warn("Redis unavailable - dashboard empty");
     return res.render('orders', { totalOrders: 0, orders: [] });
   }
+
   try {
     const storeNameMap = {};
     for (const key in process.env) {
@@ -97,8 +99,10 @@ app.get("/dashboard", async (req, res) => {
         if (domain) storeNameMap[domain] = process.env[key];
       }
     }
+
     const rawOrders = await redis.lrange('order_history', 0, -1) || [];
     console.log(`[DASHBOARD] Fetched ${rawOrders.length} raw items`);
+
     const orders = rawOrders
       .map((item, idx) => {
         if (item === null || item === undefined) {
@@ -128,39 +132,64 @@ app.get("/dashboard", async (req, res) => {
       .filter(Boolean);
 
     enhancedOrders = orders.map(o => ({
-      ...o,
-      orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
-      storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
-      timestamp: o.timestamp || o.created_at || new Date().toISOString(),
-    }));
+  ...o,
+  orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
+  storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
+  timestamp: o.timestamp || o.created_at || new Date().toISOString(),
+}));
 
-    // Get sort from URL (?sort=asc or ?sort=desc) — default desc (newest first)
-    const sortParam = req.query.sort || 'desc';
+// Custom parser for your exact format: "M/D/YYYY, h:mm AM/PM" (EST)
+function parseEST(ts) {
+  if (!ts) return 0;
 
-    // Single sort block — no duplicates
-    enhancedOrders.sort((a, b) => {
-      const unixA = a.created_at_unix || 0;
-      const unixB = b.created_at_unix || 0;
+  // "2/4/2026, 9:20 AM" → remove comma
+  const cleaned = ts.replace(',', '').trim();
 
-      if (sortParam === 'asc') {
-        return unixA - unixB; // smallest unix first = oldest on top
-      } else {
-        return unixB - unixA; // largest unix first = newest on top
-      }
-    });
+  // Split: datePart, timePart, meridiem
+  const parts = cleaned.split(' ');
+  if (parts.length < 3) return 0;
+
+  const datePart = parts[0];           // "2/4/2026"
+  const timePart = parts[1];           // "9:20"
+  const meridiem = parts[2].toUpperCase(); // "AM" or "PM"
+
+  const [month, day, year] = datePart.split('/').map(Number);
+  let [hour, minute] = timePart.split(':').map(Number);
+
+  // Fix 12-hour logic
+  if (meridiem === 'PM' && hour !== 12) hour += 12;
+  if (meridiem === 'AM' && hour === 12) hour = 0;
+
+  // Create date object (treat as local time — since string is EST)
+  const date = new Date(year, month - 1, day, hour, minute, 0);
+
+  // Debug
+  console.log(`[PARSE-DEBUG] "${ts}" → ${date.toISOString()} (valid: ${!isNaN(date.getTime())})`);
+
+  return date.getTime();
+}
+
+// Sort newest first using manual parser
+// Sort newest first using created_at_unix (numeric, reliable)
+enhancedOrders.sort((a, b) => {
+  const unixA = a.created_at_unix || 0;
+  const unixB = b.created_at_unix || 0;
+  return unixB - unixA; // newer unix = higher number = first
+});
+
+total = enhancedOrders.length;
+console.log(`[DASHBOARD] Rendered ${total} sorted orders (newest first by unix)`);
 
     total = enhancedOrders.length;
-    console.log(`[DASHBOARD] Rendered ${total} sorted orders (${sortParam === 'asc' ? 'oldest first' : 'newest first'})`);
-
-    res.render('orders', {
-      totalOrders: total,
-      orders: enhancedOrders,
-      currentSort: sortParam
-    });
+    console.log(`[DASHBOARD] Rendered ${total} orders`);
   } catch (err) {
     console.error("Dashboard load error:", err.message);
-    res.render('orders', { totalOrders: 0, orders: [] });
   }
+
+  res.render('orders', {
+    totalOrders: total,
+    orders: enhancedOrders
+  });
 });
 // Re-sync failed/skipped order (POST)
 app.post("/resync/:orderId", async (req, res) => {
