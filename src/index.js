@@ -206,7 +206,8 @@ console.log(`[DASHBOARD] Rendered ${total} sorted orders (newest first by unix)`
 
   res.render('orders', {
     totalOrders: total,
-    orders: enhancedOrders
+    orders: enhancedOrders,
+	currentSort: sortParam || 'desc'  // default to 'desc' if undefined
   });
 });
 // Re-sync failed/skipped order (POST)
