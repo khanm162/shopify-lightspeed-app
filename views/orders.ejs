@@ -378,7 +378,7 @@ console.log("Default sort applied on created_at_unix");
     updateTotal();
   });
 
-// Manual sorting toggle - redirect timestamp + MULTIPLE DOM refresh calls
+// Manual sorting toggle - redirect timestamp + force re-sort & re-render on every click
 document.querySelectorAll('th[data-sort]').forEach(th => {
   th.addEventListener('click', () => {
     let field = th.getAttribute('data-sort');
@@ -390,19 +390,20 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
       console.log("Redirected timestamp sort to created_at_unix");
     }
 
+    // Toggle asc/desc
     const isAsc = th.classList.contains('asc');
     const order = isAsc ? 'desc' : 'asc';
 
     console.log(`Sorting ${field} ${order}`);
 
-    // Step 1: Sort the internal data
+    // Force sort again (List.js sometimes needs re-call for asc)
     userList.sort(field, { order });
 
-    // Step 2: Force multiple updates to ensure DOM redraw
-    userList.reIndex();          // Rebuild item index
-    userList.update();           // Update visible items
-    userList.reIndex();          // Double-call sometimes needed for large tables
-    userList.update();           // Second update forces full tbody rewrite
+    // Force multiple updates to guarantee DOM redraw
+    userList.reIndex();   // Rebuild internal list
+    userList.update();    // Update visible items
+    userList.reIndex();   // Extra re-index for safety on large tables
+    userList.update();    // Extra update to force tbody rewrite
 
     // Update arrow on this header
     th.classList.remove('asc', 'desc');
@@ -413,7 +414,7 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
       if (other !== th) other.classList.remove('asc', 'desc');
     });
 
-    // Optional: Scroll to top to see the change immediately
+    // Scroll to top so user sees the change
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 });
