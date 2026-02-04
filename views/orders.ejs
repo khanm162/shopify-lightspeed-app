@@ -297,10 +297,10 @@
   console.log("Dashboard script loaded successfully");
 
   const userList = new List('orders-table', {
-    valueNames: ['orderNumber', 'storeName', 'timestamp', 'status', 'products', 'error-msg'],
-    searchClass: 'search',
-    sortClass: 'sort'
-  });
+  valueNames: ['orderNumber', 'storeName', 'timestamp', 'status', 'products', 'error-msg', 'created_at_unix'],
+  searchClass: 'search',
+  sortClass: 'sort'
+});
   console.log("List.js initialized");
 
   // Default: newest first using created_at_unix
