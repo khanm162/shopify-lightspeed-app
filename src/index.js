@@ -141,18 +141,22 @@ app.get("/dashboard", async (req, res) => {
 // Sort newest first (descending timestamp)
 // Sort newest first (descending timestamp) - safe version
 // Sort newest first - robust parsing for "M/D/YYYY, h:mm AM/PM" format
+// Sort newest first - robust parsing for "M/D/YYYY, h:mm AM/PM" format
 enhancedOrders.sort((a, b) => {
   let tsA = a.timestamp || a.created_at || '1970-01-01';
   let tsB = b.timestamp || b.created_at || '1970-01-01';
 
-  // Remove comma and make format consistent: "M/D/YYYY h:mm AM/PM" → parsable
-  tsA = tsA.replace(',', '');
-  tsB = tsB.replace(',', '');
+  // Remove comma, extra spaces, and normalize AM/PM format
+  tsA = tsA.replace(/,/g, '').trim().replace(/\s+/g, ' ');
+  tsB = tsB.replace(/,/g, '').trim().replace(/\s+/g, ' ');
+
+  // Add space before AM/PM if missing (common issue)
+  tsA = tsA.replace(/([AP]M)/i, ' $1');
+  tsB = tsB.replace(/([AP]M)/i, ' $1');
 
   const dateA = new Date(tsA);
   const dateB = new Date(tsB);
 
-  // Fallback if invalid
   const timeA = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
   const timeB = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
 
