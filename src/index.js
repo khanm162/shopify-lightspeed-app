@@ -134,18 +134,18 @@ app.get("/dashboard", async (req, res) => {
       timestamp: o.timestamp || o.created_at || new Date().toISOString(),
     }));
 
-    // Support ?sort=asc or ?sort=desc (default = desc/newest first)
+    // Get sort from URL (?sort=asc or ?sort=desc) — default desc (newest first)
     const sortParam = req.query.sort || 'desc';
 
-    // Sort using created_at_unix (numeric, reliable)
+    // Single sort block — no duplicates
     enhancedOrders.sort((a, b) => {
       const unixA = a.created_at_unix || 0;
       const unixB = b.created_at_unix || 0;
 
       if (sortParam === 'asc') {
-        return unixA - unixB; // oldest first
+        return unixA - unixB; // smallest unix first = oldest on top
       } else {
-        return unixB - unixA; // newest first
+        return unixB - unixA; // largest unix first = newest on top
       }
     });
 
