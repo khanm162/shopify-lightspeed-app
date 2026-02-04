@@ -138,6 +138,24 @@ app.get("/dashboard", async (req, res) => {
   timestamp: o.timestamp || o.created_at || new Date().toISOString(),
 }));
 
+// NEW: Support ?sort=asc or ?sort=desc query parameter (default = desc/newest first)
+const sortParam = req.query.sort || 'desc';
+
+// Sort using created_at_unix (numeric, reliable)
+enhancedOrders.sort((a, b) => {
+  const unixA = a.created_at_unix || 0;
+  const unixB = b.created_at_unix || 0;
+
+  if (sortParam === 'asc') {
+    return unixA - unixB; // oldest first (smallest unix first)
+  } else {
+    return unixB - unixA; // newest first (largest unix first)
+  }
+});
+
+total = enhancedOrders.length;
+console.log(`[DASHBOARD] Rendered ${total} sorted orders (${sortParam === 'asc' ? 'oldest first' : 'newest first'})`);
+
 // Custom parser for your exact format: "M/D/YYYY, h:mm AM/PM" (EST)
 function parseEST(ts) {
   if (!ts) return 0;
