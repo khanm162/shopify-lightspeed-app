@@ -260,7 +260,7 @@
         </thead>
         <tbody class="list">
           <% orders.forEach(o => { %>
-            <tr>
+            <tr data-unix="<%= o.created_at_unix || 0 %>">
               <td class="orderNumber"><%= o.name || o.orderNumber || o.shopifyOrderId || '-' %></td>
               <td class="storeName"><%= o.storeName || o.shopDomain || 'Unknown' %></td>
               <td class="timestamp">
@@ -378,43 +378,67 @@ console.log("Default sort applied on created_at_unix");
     updateTotal();
   });
 
-// Manual sorting toggle - redirect timestamp + force re-sort & re-render on every click
+// Manual sorting toggle - manual DOM sort for timestamp, List.js for others
 document.querySelectorAll('th[data-sort]').forEach(th => {
   th.addEventListener('click', () => {
-    let field = th.getAttribute('data-sort');
+    const field = th.getAttribute('data-sort');
     console.log(`Clicked header: ${field}`);
 
-    // Redirect timestamp column to numeric unix field
     if (field === 'timestamp') {
-      field = 'created_at_unix';
-      console.log("Redirected timestamp sort to created_at_unix");
+      console.log("Manual DOM sort for timestamp");
+
+      const isAsc = th.classList.contains('asc');
+      const order = isAsc ? 'desc' : 'asc';
+
+      console.log(`Sorting timestamp ${order}`);
+
+      // Get tbody and all rows
+      const tbody = document.querySelector('#orders-table tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+
+      // Sort rows by data-unix attribute
+      rows.sort((a, b) => {
+        const unixA = parseInt(a.getAttribute('data-unix') || 0);
+        const unixB = parseInt(b.getAttribute('data-unix') || 0);
+        return order === 'asc' ? unixA - unixB : unixB - unixA;
+      });
+
+      // Re-append all rows in new order (forces full DOM reorder)
+      tbody.innerHTML = ''; // clear current rows
+      rows.forEach(row => tbody.appendChild(row));
+
+      // Update arrow
+      th.classList.remove('asc', 'desc');
+      th.classList.add(order);
+
+      // Clean other headers
+      document.querySelectorAll('th').forEach(other => {
+        if (other !== th) other.classList.remove('asc', 'desc');
+      });
+
+      // Scroll to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      return; // Done - handled manually
     }
 
-    // Toggle asc/desc
+    // All other columns - use List.js
     const isAsc = th.classList.contains('asc');
     const order = isAsc ? 'desc' : 'asc';
 
-    console.log(`Sorting ${field} ${order}`);
+    console.log(`Sorting ${field} ${order} with List.js`);
 
-    // Force sort again (List.js sometimes needs re-call for asc)
     userList.sort(field, { order });
+    userList.reIndex();
+    userList.update();
 
-    // Force multiple updates to guarantee DOM redraw
-    userList.reIndex();   // Rebuild internal list
-    userList.update();    // Update visible items
-    userList.reIndex();   // Extra re-index for safety on large tables
-    userList.update();    // Extra update to force tbody rewrite
-
-    // Update arrow on this header
     th.classList.remove('asc', 'desc');
     th.classList.add(order);
 
-    // Clean arrows on other headers
     document.querySelectorAll('th').forEach(other => {
       if (other !== th) other.classList.remove('asc', 'desc');
     });
 
-    // Scroll to top so user sees the change
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 });
