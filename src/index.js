@@ -138,20 +138,20 @@ app.get("/dashboard", async (req, res) => {
   timestamp: o.timestamp || o.created_at || new Date().toISOString(),
 }));
 
-// Sort newest first - fix parsing for "M/D/YYYY, h:mm AM/PM" format
+// Sort newest first - robust parsing for "M/D/YYYY, h:mm AM/PM" format
 enhancedOrders.sort((a, b) => {
   let tsA = a.timestamp || a.created_at || '1970-01-01';
   let tsB = b.timestamp || b.created_at || '1970-01-01';
 
-  // Remove comma and normalize spaces + AM/PM
+  // Remove comma and normalize spaces
   tsA = tsA.replace(/,\s*/g, ' ').trim();
   tsB = tsB.replace(/,\s*/g, ' ').trim();
 
-  // Ensure space before AM/PM (common missing in your data)
+  // Ensure space before AM/PM if missing
   tsA = tsA.replace(/([AP]M)$/i, ' $1');
   tsB = tsB.replace(/([AP]M)$/i, ' $1');
 
-  // Parse as local time (EST in string)
+  // Parse as local time
   const dateA = new Date(tsA);
   const dateB = new Date(tsB);
 
