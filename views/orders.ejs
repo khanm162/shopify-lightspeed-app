@@ -303,9 +303,9 @@
   });
   console.log("List.js initialized");
 
-  // Default: newest first
-  userList.sort('timestamp', { order: 'desc' });
-  console.log("Default sort applied");
+  // Default: newest first using created_at_unix
+userList.sort('created_at_unix', { order: 'desc' });
+console.log("Default sort applied on created_at_unix");
 
   // IMPORTANT: Force List.js to re-render the table after sort
   userList.reIndex();   // ← added
@@ -379,20 +379,24 @@
 
   // Manual sorting toggle with debug
   document.querySelectorAll('th[data-sort]').forEach(th => {
-    th.addEventListener('click', () => {
-      const field = th.getAttribute('data-sort');
-      console.log(`Clicked header: ${field}`);
+  th.addEventListener('click', () => {
+    let field = th.getAttribute('data-sort');
+    console.log(`Clicked header: ${field}`);
 
-      const isAsc = th.classList.contains('asc');
-      const order = isAsc ? 'desc' : 'asc';
+    const isAsc = th.classList.contains('asc');
+    const order = isAsc ? 'desc' : 'asc';
 
-      console.log(`Sorting ${field} ${order}`);
-      userList.sort(field, { order });
+    console.log(`Sorting ${field} ${order}`);
 
-      th.classList.remove('asc', 'desc');
-      th.classList.add(order);
-    });
+    // Use created_at_unix for timestamp column
+    if (field === 'timestamp') field = 'created_at_unix';
+
+    userList.sort(field, { order });
+
+    th.classList.remove('asc', 'desc');
+    th.classList.add(order);
   });
+});
 
   async function resync(orderId) {
     if (!confirm(`Re-sync order #${orderId}?`)) return;
