@@ -138,31 +138,44 @@ app.get("/dashboard", async (req, res) => {
   timestamp: o.timestamp || o.created_at || new Date().toISOString(),
 }));
 
-// Sort newest first - robust parsing for "M/D/YYYY, h:mm AM/PM" format
+// Custom parser for your exact format: "M/D/YYYY, h:mm AM/PM"
+function parseEST(ts) {
+  if (!ts) return 0;
+
+  // "2/4/2026, 9:20 AM" → remove comma
+  const cleaned = ts.replace(',', '').trim();
+
+  // Split into date + time + AM/PM
+  const parts = cleaned.split(' ');
+  if (parts.length < 3) return 0;
+
+  const datePart = parts[0]; // "2/4/2026"
+  const timePart = parts[1]; // "9:20"
+  const meridiem = parts[2].toUpperCase(); // "AM" or "PM"
+
+  const [month, day, year] = datePart.split('/').map(Number);
+  let [hour, minute] = timePart.split(':').map(Number);
+
+  // Handle 12-hour clock
+  if (meridiem === 'PM' && hour !== 12) hour += 12;
+  if (meridiem === 'AM' && hour === 12) hour = 0;
+
+  // Create UTC timestamp assuming EST (UTC-5)
+  // Note: new Date(year, month-1, day, hour, minute) is local time
+  // To treat it as EST, we can adjust or just use it directly as local
+  return new Date(year, month - 1, day, hour, minute).getTime();
+}
+
+// Sort newest first
 enhancedOrders.sort((a, b) => {
-  let tsA = a.timestamp || a.created_at || '1970-01-01';
-  let tsB = b.timestamp || b.created_at || '1970-01-01';
-
-  // Remove comma and normalize spaces
-  tsA = tsA.replace(/,\s*/g, ' ').trim();
-  tsB = tsB.replace(/,\s*/g, ' ').trim();
-
-  // Ensure space before AM/PM if missing
-  tsA = tsA.replace(/([AP]M)$/i, ' $1');
-  tsB = tsB.replace(/([AP]M)$/i, ' $1');
-
-  // Parse as local time
-  const dateA = new Date(tsA);
-  const dateB = new Date(tsB);
+  const timeA = parseEST(a.timestamp || a.created_at);
+  const timeB = parseEST(b.timestamp || b.created_at);
 
   // Debug first few items
   if (enhancedOrders.indexOf(a) < 3 || enhancedOrders.indexOf(b) < 3) {
-    console.log(`[SORT-DEBUG] Original tsA: "${a.timestamp}" → parsed: ${dateA.toISOString()} valid: ${!isNaN(dateA.getTime())}`);
-    console.log(`[SORT-DEBUG] Original tsB: "${b.timestamp}" → parsed: ${dateB.toISOString()} valid: ${!isNaN(dateB.getTime())}`);
+    console.log(`[SORT-DEBUG] Original: "${a.timestamp}" → ${new Date(timeA).toISOString()} (${timeA})`);
+    console.log(`[SORT-DEBUG] Original: "${b.timestamp}" → ${new Date(timeB).toISOString()} (${timeB})`);
   }
-
-  const timeA = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
-  const timeB = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
 
   return timeB - timeA; // newest first
 });
