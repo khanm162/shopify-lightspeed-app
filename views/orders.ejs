@@ -403,10 +403,15 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
   // Step 3: Get rows and sort them
   const rows = Array.from(oldTbody.querySelectorAll('tr'));
   rows.sort((a, b) => {
-    const unixA = parseInt(a.getAttribute('data-unix') || 0);
-    const unixB = parseInt(b.getAttribute('data-unix') || 0);
-    return order === 'asc' ? unixA - unixB : unixB - unixA;
-  });
+  let unixA = parseInt(a.getAttribute('data-unix') || 0);
+  let unixB = parseInt(b.getAttribute('data-unix') || 0);
+
+  // Treat 0 as very old so real old orders come first in asc
+  if (unixA === 0) unixA = -Infinity;
+  if (unixB === 0) unixB = -Infinity;
+
+  return order === 'asc' ? unixA - unixB : unixB - unixA;
+});
 
   // Step 4: Append sorted rows to new tbody (use cloneNode for safety)
   const fragment = document.createDocumentFragment();
