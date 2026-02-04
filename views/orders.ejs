@@ -377,7 +377,7 @@ console.log("Default sort applied on created_at_unix");
     updateTotal();
   });
 
-// Manual sorting toggle - redirect timestamp to created_at_unix + force re-render
+// Manual sorting toggle - redirect timestamp + MULTIPLE DOM refresh calls
 document.querySelectorAll('th[data-sort]').forEach(th => {
   th.addEventListener('click', () => {
     let field = th.getAttribute('data-sort');
@@ -394,12 +394,14 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
 
     console.log(`Sorting ${field} ${order}`);
 
-    // Perform sort
+    // Step 1: Sort the internal data
     userList.sort(field, { order });
 
-    // Force List.js to update the DOM (critical for visible reordering)
-    userList.reIndex();   // Rebuild internal item list
-    userList.update();    // Force DOM refresh with new order
+    // Step 2: Force multiple updates to ensure DOM redraw
+    userList.reIndex();          // Rebuild item index
+    userList.update();           // Update visible items
+    userList.reIndex();          // Double-call sometimes needed for large tables
+    userList.update();           // Second update forces full tbody rewrite
 
     // Update arrow on this header
     th.classList.remove('asc', 'desc');
@@ -409,6 +411,9 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
     document.querySelectorAll('th').forEach(other => {
       if (other !== th) other.classList.remove('asc', 'desc');
     });
+
+    // Optional: Scroll to top to see the change immediately
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 });
   async function resync(orderId) {
