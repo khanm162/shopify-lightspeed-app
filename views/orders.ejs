@@ -392,33 +392,28 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
 
   console.log(`Sorting timestamp ${order}`);
 
-  // Get tbody and rows
-  const tbody = document.querySelector('#orders-table tbody');
-  const rows = Array.from(tbody.querySelectorAll('tr'));
+  // Get current tbody
+  const oldTbody = document.querySelector('#orders-table tbody');
 
-  // Sort by data-unix
+  // Create a new tbody (this forces browser to treat it as fresh)
+  const newTbody = document.createElement('tbody');
+  newTbody.className = 'list'; // keep List.js class
+
+  // Get rows from old tbody
+  const rows = Array.from(oldTbody.querySelectorAll('tr'));
+
+  // Sort rows by data-unix
   rows.sort((a, b) => {
     const unixA = parseInt(a.getAttribute('data-unix') || 0);
     const unixB = parseInt(b.getAttribute('data-unix') || 0);
     return order === 'asc' ? unixA - unixB : unixB - unixA;
   });
 
-  // Create a document fragment (detached from DOM) for clean re-append
-  const fragment = document.createDocumentFragment();
-  rows.forEach(row => fragment.appendChild(row.cloneNode(true))); // clone to avoid issues
+  // Append sorted rows to new tbody
+  rows.forEach(row => newTbody.appendChild(row.cloneNode(true)));
 
-  // Clear tbody
-  while (tbody.firstChild) {
-    tbody.removeChild(tbody.firstChild);
-  }
-
-  // Append sorted rows from fragment
-  tbody.appendChild(fragment);
-
-  // Force browser reflow (critical in some browsers)
-  tbody.style.display = 'none';
-  void tbody.offsetHeight; // trigger reflow
-  tbody.style.display = '';
+  // Replace old tbody with new one (forces full redraw)
+  oldTbody.parentNode.replaceChild(newTbody, oldTbody);
 
   // Update arrow
   th.classList.remove('asc', 'desc');
@@ -428,6 +423,9 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
   document.querySelectorAll('th').forEach(other => {
     if (other !== th) other.classList.remove('asc', 'desc');
   });
+
+  // Force browser reflow
+  document.body.offsetHeight;
 
   // Scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
