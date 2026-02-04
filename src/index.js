@@ -134,10 +134,10 @@ app.get("/dashboard", async (req, res) => {
       timestamp: o.timestamp || o.created_at || new Date().toISOString(),
     }));
 
-    // NEW: Support ?sort=asc or ?sort=desc (default = desc/newest first)
+    // Support ?sort=asc or ?sort=desc (default = desc/newest first)
     const sortParam = req.query.sort || 'desc';
 
-    // Sort using created_at_unix
+    // Sort using created_at_unix (numeric, reliable)
     enhancedOrders.sort((a, b) => {
       const unixA = a.created_at_unix || 0;
       const unixB = b.created_at_unix || 0;
