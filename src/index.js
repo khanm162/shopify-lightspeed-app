@@ -138,27 +138,27 @@ app.get("/dashboard", async (req, res) => {
   timestamp: o.timestamp || o.created_at || new Date().toISOString(),
 }));
 
-// Sort newest first - robust parsing for "M/D/YYYY, h:mm AM/PM" format
+// Sort newest first - fix parsing for "M/D/YYYY, h:mm AM/PM" format
 enhancedOrders.sort((a, b) => {
-  let tsA = a.timestamp || a.created_at || '1970-01-01T00:00:00Z';
-  let tsB = b.timestamp || b.created_at || '1970-01-01T00:00:00Z';
+  let tsA = a.timestamp || a.created_at || '1970-01-01';
+  let tsB = b.timestamp || b.created_at || '1970-01-01';
 
-  // Remove comma and normalize spaces
+  // Remove comma and normalize spaces + AM/PM
   tsA = tsA.replace(/,\s*/g, ' ').trim();
   tsB = tsB.replace(/,\s*/g, ' ').trim();
 
-  // Ensure space before AM/PM if missing
+  // Ensure space before AM/PM (common missing in your data)
   tsA = tsA.replace(/([AP]M)$/i, ' $1');
   tsB = tsB.replace(/([AP]M)$/i, ' $1');
 
-  // Parse as local time (EST is already in the string)
+  // Parse as local time (EST in string)
   const dateA = new Date(tsA);
   const dateB = new Date(tsB);
 
-  // Debug log for first few items
-  if (enhancedOrders.indexOf(a) < 3) {
-    console.log(`[SORT-DEBUG] tsA: "${tsA}" → valid: ${!isNaN(dateA.getTime())}`);
-    console.log(`[SORT-DEBUG] tsB: "${tsB}" → valid: ${!isNaN(dateB.getTime())}`);
+  // Debug first few items
+  if (enhancedOrders.indexOf(a) < 3 || enhancedOrders.indexOf(b) < 3) {
+    console.log(`[SORT-DEBUG] Original tsA: "${a.timestamp}" → parsed: ${dateA.toISOString()} valid: ${!isNaN(dateA.getTime())}`);
+    console.log(`[SORT-DEBUG] Original tsB: "${b.timestamp}" → parsed: ${dateB.toISOString()} valid: ${!isNaN(dateB.getTime())}`);
   }
 
   const timeA = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
