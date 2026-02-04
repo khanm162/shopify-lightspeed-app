@@ -138,24 +138,28 @@ app.get("/dashboard", async (req, res) => {
   timestamp: o.timestamp || o.created_at || new Date().toISOString(),
 }));
 
-// Sort newest first (descending timestamp)
-// Sort newest first (descending timestamp) - safe version
-// Sort newest first - robust parsing for "M/D/YYYY, h:mm AM/PM" format
 // Sort newest first - robust parsing for "M/D/YYYY, h:mm AM/PM" format
 enhancedOrders.sort((a, b) => {
-  let tsA = a.timestamp || a.created_at || '1970-01-01';
-  let tsB = b.timestamp || b.created_at || '1970-01-01';
+  let tsA = a.timestamp || a.created_at || '1970-01-01T00:00:00Z';
+  let tsB = b.timestamp || b.created_at || '1970-01-01T00:00:00Z';
 
-  // Remove comma, extra spaces, and normalize AM/PM format
-  tsA = tsA.replace(/,/g, '').trim().replace(/\s+/g, ' ');
-  tsB = tsB.replace(/,/g, '').trim().replace(/\s+/g, ' ');
+  // Remove comma and normalize spaces
+  tsA = tsA.replace(/,\s*/g, ' ').trim();
+  tsB = tsB.replace(/,\s*/g, ' ').trim();
 
-  // Add space before AM/PM if missing (common issue)
-  tsA = tsA.replace(/([AP]M)/i, ' $1');
-  tsB = tsB.replace(/([AP]M)/i, ' $1');
+  // Ensure space before AM/PM if missing
+  tsA = tsA.replace(/([AP]M)$/i, ' $1');
+  tsB = tsB.replace(/([AP]M)$/i, ' $1');
 
+  // Parse as local time (EST is already in the string)
   const dateA = new Date(tsA);
   const dateB = new Date(tsB);
+
+  // Debug log for first few items
+  if (enhancedOrders.indexOf(a) < 3) {
+    console.log(`[SORT-DEBUG] tsA: "${tsA}" → valid: ${!isNaN(dateA.getTime())}`);
+    console.log(`[SORT-DEBUG] tsB: "${tsB}" → valid: ${!isNaN(dateB.getTime())}`);
+  }
 
   const timeA = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
   const timeB = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
