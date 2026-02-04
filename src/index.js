@@ -82,6 +82,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(process.cwd(), 'views'));
 // Dashboard
 // Dashboard
+// Dashboard
 app.get("/dashboard", async (req, res) => {
   let enhancedOrders = [];
   let total = 0;
