@@ -136,7 +136,24 @@ app.get("/dashboard", async (req, res) => {
   orderNumber: o.name || o.orderNumber || o.shopifyOrderId || '-',
   storeName: storeNameMap[o.shopDomain] || o.shopDomain || 'Unknown Store',
   timestamp: o.timestamp || o.created_at || new Date().toISOString(),
-}));
+})
+// Support ?sort=asc or ?sort=desc (default = desc/newest first)
+const sortParam = req.query.sort || 'desc';
+
+// Sort using created_at_unix (numeric, reliable)
+enhancedOrders.sort((a, b) => {
+  const unixA = a.created_at_unix || 0;
+  const unixB = b.created_at_unix || 0;
+
+  if (sortParam === 'asc') {
+    return unixA - unixB; // oldest first
+  } else {
+    return unixB - unixA; // newest first
+  }
+});
+
+total = enhancedOrders.length;
+console.log(`[DASHBOARD] Rendered ${total} sorted orders (${sortParam === 'asc' ? 'oldest first' : 'newest first'})`););
 
 // Custom parser for your exact format: "M/D/YYYY, h:mm AM/PM" (EST)
 function parseEST(ts) {
@@ -187,8 +204,9 @@ console.log(`[DASHBOARD] Rendered ${total} sorted orders (newest first by unix)`
   }
 
   res.render('orders', {
-    totalOrders: total,
-    orders: enhancedOrders
+  totalOrders: total,
+  orders: enhancedOrders,
+  currentSort: sortParam  // ← this lets EJS know current state
   });
 });
 // Re-sync failed/skipped order (POST)
