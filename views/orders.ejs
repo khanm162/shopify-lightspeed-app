@@ -384,43 +384,51 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
     const field = th.getAttribute('data-sort');
     console.log(`Clicked header: ${field}`);
 
-    if (field === 'timestamp') {
-      console.log("Manual DOM sort for timestamp");
+   if (field === 'timestamp') {
+  console.log("Manual DOM sort for timestamp");
 
-      const isAsc = th.classList.contains('asc');
-      const order = isAsc ? 'desc' : 'asc';
+  const isAsc = th.classList.contains('asc');
+  const order = isAsc ? 'desc' : 'asc';
 
-      console.log(`Sorting timestamp ${order}`);
+  console.log(`Sorting timestamp ${order}`);
 
-      // Get tbody and all rows
-      const tbody = document.querySelector('#orders-table tbody');
-      const rows = Array.from(tbody.querySelectorAll('tr'));
+  // Get tbody and all rows
+  const tbody = document.querySelector('#orders-table tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
 
-      // Sort rows by data-unix attribute
-      rows.sort((a, b) => {
-        const unixA = parseInt(a.getAttribute('data-unix') || 0);
-        const unixB = parseInt(b.getAttribute('data-unix') || 0);
-        return order === 'asc' ? unixA - unixB : unixB - unixA;
-      });
+  // Sort rows by data-unix attribute
+  rows.sort((a, b) => {
+    const unixA = parseInt(a.getAttribute('data-unix') || 0);
+    const unixB = parseInt(b.getAttribute('data-unix') || 0);
+    return order === 'asc' ? unixA - unixB : unixB - unixA;
+  });
 
-      // Re-append all rows in new order (forces full DOM reorder)
-      tbody.innerHTML = ''; // clear current rows
-      rows.forEach(row => tbody.appendChild(row));
+  // Clear tbody and re-append rows (use replaceChildren for better reflow)
+  tbody.replaceChildren(...rows);
 
-      // Update arrow
-      th.classList.remove('asc', 'desc');
-      th.classList.add(order);
+  // Alternative if replaceChildren not supported (older browsers):
+  // tbody.innerHTML = '';
+  // rows.forEach(row => tbody.appendChild(row.cloneNode(true)));
 
-      // Clean other headers
-      document.querySelectorAll('th').forEach(other => {
-        if (other !== th) other.classList.remove('asc', 'desc');
-      });
+  // Update arrow
+  th.classList.remove('asc', 'desc');
+  th.classList.add(order);
 
-      // Scroll to top
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Clean other headers
+  document.querySelectorAll('th').forEach(other => {
+    if (other !== th) other.classList.remove('asc', 'desc');
+  });
 
-      return; // Done - handled manually
-    }
+  // Force browser reflow (helps in some cases)
+  tbody.style.display = 'none';
+  tbody.offsetHeight; // trigger reflow
+  tbody.style.display = '';
+
+  // Scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  return; // Done - handled manually
+}
 
     // All other columns - use List.js
     const isAsc = th.classList.contains('asc');
